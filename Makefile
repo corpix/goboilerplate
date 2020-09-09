@@ -44,26 +44,8 @@ shell_opts = -v $(shell_volume_nix):/nix:rw     \
 
 ## macro
 
-# XXX: yes, this two empty lines here are required :)
-define \n
-
-
-endef
-
-define sorted
-@echo $(cmds) | sed 's|\s|\n|g' | sort
-endef
-
 define fail
 { echo "error: "$(1) 1>&2; exit 1; }
-endef
-
-define expect
-{ grep $(1) > /dev/null || $(call fail,$(2)); }
-endef
-
-define required
-@if [ -z $(2) ]; then $(call fail,"$(1) is required") fi
 endef
 
 ## targets
@@ -73,9 +55,9 @@ all: build # test, check and build all cmds
 
 .PHONY: help
 help: # print defined targets and their comments
-	@grep -Po '^[a-zA-Z%_/\-\s]+:+(\s.*$$|$$)' $(MAKEFILE_LIST)      \
-		| sort                                                   \
-		| sed 's|:.*#|#|;s|#\s*|#|'                              \
+	@grep -Po '^[a-zA-Z%_/\-\s]+:+(\s.*$$|$$)' Makefile \
+		| sort                                      \
+		| sed 's|:.*#|#|;s|#\s*|#|'                 \
 		| column -t -s '#' -o ' | '
 
 ### releases
@@ -83,13 +65,13 @@ help: # print defined targets and their comments
 ### development
 
 .PHONY: build
-build:
+build: # build application
 	go build -o main                                            \
 		--ldflags "-X $(pkg_prefix)/cli.Version=$(VERSION)" \
 		./main.go
 
 .PHONY: run
-run:
+run: # run application
 	go run ./main.go
 
 .PHONY: test
