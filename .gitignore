@@ -1,6 +1,9 @@
 .personal.*
 /main
 /.env
-.cache/
-.config/
-.local/
+/.cache/*
+/.config/*
+/.local/*
+!/.cache/.keep
+!/.config/.keep
+!/.local/.keep

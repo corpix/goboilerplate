@@ -6,11 +6,13 @@ in with import nixpkgs { inherit config; }; let
     set -e
 
     exec -a shell ${fish}/bin/fish --login --interactive --init-command='
-      set config '"$root"'/.personal.fish.conf
+      set -x root '"$root"'
+      source $root/.fish.conf
+      set config $root/.personal.fish.conf
       if test -e $config
         source $config
       end
-    '
+    ' "$@"
   '';
 in stdenv.mkDerivation rec {
   name = "nix-shell";
