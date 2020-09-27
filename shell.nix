@@ -8,7 +8,7 @@ in with import nixpkgs { inherit config; }; let
     exec -a shell ${fish}/bin/fish --login --interactive --init-command='
       set -x root '"$root"'
       set config $root/.fish.conf
-      set presonal_config $root/.personal.fish.conf
+      set personal_config $root/.personal.fish.conf
       if test -e $personal_config
         source $personal_config
       end
