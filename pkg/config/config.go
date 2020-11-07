@@ -35,7 +35,6 @@ func (c *Config) Validate() error {
 }
 
 //
-//
 
 func Default() (*Config, error) {
 	c := &Config{}

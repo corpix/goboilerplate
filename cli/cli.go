@@ -113,6 +113,7 @@ func Before(ctx *cli.Context) error {
 
 	return nil
 }
+
 func ConfigShowDefaultAction(ctx *cli.Context) error {
 	c, err := config.Default()
 	if err != nil {

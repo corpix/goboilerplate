@@ -2,10 +2,10 @@
 
 ## parameters
 
-NAME              ?= goboilerplate
-NAMESPACE         ?= git.backbone/corpix
-VERSION           ?= development
-ENV               ?= dev
+name              ?= goboilerplate
+namespace         ?= git.backbone/corpix
+version           ?= development
+os                ?=
 
 PARALLEL_JOBS ?= 8
 NIX_OPTS      ?=
@@ -18,25 +18,25 @@ export GOFLAGS ?=
 
 root                := $(dir $(realpath $(firstword $(MAKEFILE_LIST))))
 nix_dir             := nix
-pkg_prefix          := $(NAMESPACE)/$(NAME)
+pkg_prefix          := $(namespace)/$(name)
 tmux                := tmux -2 -f $(PWD)/.tmux.conf -S $(PWD)/.tmux
-tmux_session        := $(NAME)
+tmux_session        := $(name)
 nix                 := nix $(NIX_OPTS)
 shell_volume_nix    := nix
 
 ### reusable and long opts for commands inside rules
 
-add_shell_opts ?=
-shell_opts = -v $(shell_volume_nix):/nix:rw     \
-	-v $(root):/chroot                      \
-	-e COLUMNS=$(COLUMNS)                   \
-	-e LINES=$(LINES)                       \
-	-e TERM=$(TERM)                         \
-	-e NIX_BUILD_CORES=$(NIX_BUILD_CORES)   \
-	-e HOME=/chroot                         \
-	-w /chroot                              \
-	--hostname $(NAMESPACE).localhost       \
-	$(foreach v,$(ports), -p $(v):$(v) ) $(add_shell_opts)
+shell_opts ?=
+docker_shell_opts = -v $(shell_volume_nix):/nix:rw  \
+	-v $(root):/chroot                          \
+	-e COLUMNS=$(COLUMNS)                       \
+	-e LINES=$(LINES)                           \
+	-e TERM=$(TERM)                             \
+	-e NIX_BUILD_CORES=$(NIX_BUILD_CORES)       \
+	-e HOME=/chroot                             \
+	-w /chroot                                  \
+	--hostname $(namespace).localhost           \
+	$(foreach v,$(ports), -p $(v):$(v) ) $(shell_opts)
 
 ## helpers
 
@@ -66,8 +66,9 @@ help: # print defined targets and their comments
 
 .PHONY: build
 build: # build application
+	GOOS=$(os)                                                  \
 	go build -o main                                            \
-		--ldflags "-X $(pkg_prefix)/cli.Version=$(VERSION)" \
+		--ldflags "-X $(pkg_prefix)/cli.Version=$(version)" \
 		./main.go
 
 .PHONY: run
@@ -88,16 +89,16 @@ dev/clean: # clean development environment artifacts
 
 .PHONY: dev/shell
 dev/shell: # run development environment shell
-	@docker run --rm -it                   \
-		--log-driver=none              \
-		$(shell_opts) nixos/nix:latest \
+	@docker run --rm -it                          \
+		--log-driver=none                     \
+		$(docker_shell_opts) nixos/nix:latest \
 		nix-shell --command "exec make dev/start-session"
 
 .PHONY: dev/shell/raw
 dev/shell/raw: # run development environment shell
-	@docker run --rm -it                   \
-		--log-driver=none              \
-		$(shell_opts) nixos/nix:latest \
+	@docker run --rm -it                          \
+		--log-driver=none                     \
+		$(docker_shell_opts) nixos/nix:latest \
 		nix-shell
 
 .PHONY: dev/session
