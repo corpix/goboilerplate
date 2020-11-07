@@ -1,0 +1,7 @@
+version: "2"
+services:
+  goboilerplate:
+    image: goboilerplate
+    build: .
+    ports: []
+    links: []

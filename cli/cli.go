@@ -33,6 +33,14 @@ var (
 			Usage:   "path to application configuration file",
 			Value:   "config.yaml",
 		},
+		&cli.BoolFlag{
+			Name:  "profile",
+			Usage: "write profile information for debugging(cpu.prof, heap.prof)",
+		},
+		&cli.BoolFlag{
+			Name:  "trace",
+			Usage: "write trace information for debugging(trace.prof)",
+		},
 	}
 	Commands = []*cli.Command{
 		&cli.Command{
@@ -61,33 +69,70 @@ var (
 			},
 		},
 	}
+
+	c *di.Container
 )
 
-func ConfigShowDefaultAction(ctx *cli.Context) error {
-	enc := config.NewYamlEncoder(Stdout)
-	defer enc.Close()
-	return enc.Encode(config.Default)
+func Before(ctx *cli.Context) error {
+	var err error
+
+	c = di.New()
+
+	err = c.Provide(func() *cli.Context { return ctx })
+	if err != nil {
+		return err
+	}
+
+	err = c.Provide(func(ctx *cli.Context) (*config.Config, error) {
+		return config.Load(ctx.String("config"))
+	})
+	if err != nil {
+		return err
+	}
+
+	err = c.Provide(func(c *config.Config) (log.Logger, error) {
+		return log.Create(*c.Log)
+	})
+	if err != nil {
+		return err
+	}
+
+	if ctx.Bool("profile") {
+		err = c.Invoke(writeProfile)
+		if err != nil {
+			return err
+		}
+	}
+
+	if ctx.Bool("trace") {
+		err = c.Invoke(writeTrace)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
+func ConfigShowDefaultAction(ctx *cli.Context) error {
+	c, err := config.Default()
+	if err != nil {
+		return err
+	}
+
+	return config.Show(c)
+}
+
 func ConfigShowAction(ctx *cli.Context) error {
 	c, err := config.Load(ctx.String("config"))
 	if nil != err {
 		return err
 	}
-	enc := config.NewYamlEncoder(Stdout)
-	defer enc.Close()
-	return enc.Encode(c)
+
+	return config.Show(c)
 }
+
 func RootAction(ctx *cli.Context) error {
-	c := di.New()
-
-	c.Provide(func() (*config.Config, error) {
-		return config.Load(ctx.String("config"))
-	})
-	c.Provide(func(c *config.Config) (log.Logger, error) {
-		return log.Create(c.Log)
-	})
-
-	return c.Invoke(func(l log.Logger) {
+	return c.Invoke(func(c *config.Config, l log.Logger) {
 		l.Info().Msg("running")
 
 		// FIXME: start your app here
@@ -97,6 +142,7 @@ func RootAction(ctx *cli.Context) error {
 
 func NewApp() *cli.App {
 	app := &cli.App{}
+	app.Before = Before
 	app.Flags = Flags
 	app.Action = RootAction
 	app.Commands = Commands

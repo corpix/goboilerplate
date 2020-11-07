@@ -1,6 +1,6 @@
 # github.com/Jeffail/gabs v1.4.0
 github.com/Jeffail/gabs
-# github.com/cockroachdb/errors v1.7.3
+# github.com/cockroachdb/errors v1.7.5
 ## explicit
 github.com/cockroachdb/errors
 github.com/cockroachdb/errors/assert
@@ -21,11 +21,13 @@ github.com/cockroachdb/errors/telemetrykeys
 github.com/cockroachdb/errors/withstack
 # github.com/cockroachdb/logtags v0.0.0-20190617123548-eb05cc24525f
 github.com/cockroachdb/logtags
-# github.com/cockroachdb/redact v1.0.2
+# github.com/cockroachdb/redact v1.0.6
 github.com/cockroachdb/redact
+github.com/cockroachdb/redact/internal
+github.com/cockroachdb/redact/internal/fmtsort
 # github.com/cockroachdb/sentry-go v0.6.1-cockroachdb.2
 github.com/cockroachdb/sentry-go
-# github.com/corpix/revip v0.0.0-20200203205732-23520e46fe57
+# github.com/corpix/revip v0.0.0-20200923082834-cde27ad47bbb
 ## explicit
 github.com/corpix/revip
 # github.com/cpuguy83/go-md2man/v2 v2.0.0-20190314233015-f79a8a8ca69d
@@ -48,7 +50,7 @@ github.com/kelseyhightower/envconfig
 github.com/kr/pretty
 # github.com/kr/text v0.1.0
 github.com/kr/text
-# github.com/mattn/go-isatty v0.0.9
+# github.com/mattn/go-isatty v0.0.12
 ## explicit
 github.com/mattn/go-isatty
 # github.com/mitchellh/mapstructure v1.1.2
@@ -57,7 +59,7 @@ github.com/mitchellh/mapstructure
 github.com/pelletier/go-toml
 # github.com/pkg/errors v0.9.1
 github.com/pkg/errors
-# github.com/rs/zerolog v1.19.0
+# github.com/rs/zerolog v1.20.0
 ## explicit
 github.com/rs/zerolog
 github.com/rs/zerolog/internal/cbor
