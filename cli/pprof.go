@@ -20,7 +20,11 @@ func writeProfile(l log.Logger) error {
 		return err
 	}
 
-	pprof.StartCPUProfile(cpu)
+	err = pprof.StartCPUProfile(cpu)
+	if err != nil {
+		return err
+	}
+
 	go func() {
 		defer cpu.Close()
 		defer heap.Close()
@@ -28,7 +32,12 @@ func writeProfile(l log.Logger) error {
 		l.Info().Msg("profiling, will exit in 30 seconds")
 		time.Sleep(30 * time.Second)
 		pprof.StopCPUProfile()
-		pprof.WriteHeapProfile(heap)
+		err := pprof.WriteHeapProfile(heap)
+		if err != nil {
+			l.Error().Err(err).Msg("failed to write heap profile")
+			os.Exit(1)
+			return
+		}
 
 		os.Exit(0)
 	}()
@@ -43,7 +52,11 @@ func writeTrace(l log.Logger) error {
 		return err
 	}
 
-	trace.Start(t)
+	err = trace.Start(t)
+	if err != nil {
+		return err
+	}
+
 	go func() {
 		defer t.Close()
 

@@ -6,6 +6,7 @@ name              ?= goboilerplate
 namespace         ?= git.backbone/corpix
 version           ?= development
 os                ?=
+binary            ?= ./main
 
 PARALLEL_JOBS ?= 8
 NIX_OPTS      ?=
@@ -65,9 +66,9 @@ help: # print defined targets and their comments
 ### development
 
 .PHONY: build
-build: # build application
+build $(binary): # build application `binary`
 	GOOS=$(os)                                                  \
-	go build -o main                                            \
+	go build -o $(binary)                                       \
 		--ldflags "-X $(pkg_prefix)/cli.Version=$(version)" \
 		./main.go
 
@@ -75,11 +76,24 @@ build: # build application
 run: # run application
 	go run ./main.go
 
+#### testing
+
 .PHONY: test
 test: # run unit tests
 	go test -v ./...
 
-#### testing
+.PHONY: lint
+lint: # run linter
+	golangci-lint --color=always --timeout=120s run ./...
+
+.PHONY: profile
+profile: build # collect profile for `binary`
+	$(binary) --profile
+
+.PHONY: pprof
+pprof: $(binary) # run pprof web server to visualize collected `profile`
+	@[ -z "$(profile)" ] && $(call fail,"profile=<value> parameter is required$(,) available values: cpu$(,) heap") || true
+	go tool pprof -http=":8081" $(binary) $(profile).prof
 
 #### environment management
 

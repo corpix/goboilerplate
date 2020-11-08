@@ -1,4 +1,4 @@
-let nixpkgs = <nixpkgs>;
+let nixpkgs = ./nix/nixpkgs.nix;
     config = {};
 in with import nixpkgs { inherit config; }; let
   shellWrapper = writeScript "shell-wrapper" ''
@@ -22,9 +22,11 @@ in stdenv.mkDerivation rec {
   buildInputs = [
     glibcLocales bashInteractive man
     nix cacert curl utillinux coreutils
-    git jq tmux findutils gnumake
+    git jq yq-go tmux findutils gnumake    
 
-    go gopls
+    go gopls golangci-lint
+    
+    (callPackage ./nix/release-cli.nix {})    
   ];
   shellHook = ''
     export root=$(pwd)
@@ -35,9 +37,12 @@ in stdenv.mkDerivation rec {
     fi
 
     export LANG="en_US.UTF-8"
-    export SHELL="${shellWrapper}"
     export NIX_PATH="nixpkgs=${nixpkgs}"
 
-    exec "$SHELL"
+    if [ ! -z "$PS1" ]
+    then
+      export SHELL="${shellWrapper}"
+      exec "$SHELL"
+    fi
   '';
 }
