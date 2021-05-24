@@ -1,0 +1,15 @@
+info:
+  contact: {}
+  description: Prometheus telemetry endpoint
+  license: {}
+  title: Telemetry
+  version: "1.0"
+paths:
+  /:
+    get:
+      produces:
+      - text/plain
+      responses:
+        "200": {}
+      summary: Respond with prometheus metrics
+swagger: "2.0"

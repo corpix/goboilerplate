@@ -56,7 +56,7 @@ in {
         User  = cfg.user;
         Group = cfg.group;
 
-        ExecStart = "${pkg}/bin/${name} -c ${pkgs.writeText "config.yaml" (toJSON cfg.config)}";
+        ExecStart = "${pkg}/bin/${name} -c ${pkgs.writeText "config.yml" (toJSON cfg.config)}";
       };
     };
   };

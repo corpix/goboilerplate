@@ -1,6 +1,7 @@
 package log
 
 import (
+	"git.backbone/corpix/goboilerplate/pkg/bus"
 	"git.backbone/corpix/goboilerplate/pkg/errors"
 )
 
@@ -14,7 +15,7 @@ type Config struct {
 	Level string
 }
 
-func (c *Config) SetDefaults() {
+func (c *Config) Default() {
 loop:
 	for {
 		switch {
@@ -26,9 +27,17 @@ loop:
 	}
 }
 
-func (c Config) Validate() error {
+func (c *Config) Validate() error {
 	if c.Level == "" {
 		return errors.New("level should not be empty")
+	}
+	return nil
+}
+
+func (c *Config) Update(cc interface{}) error {
+	bus.Config <- bus.ConfigUpdate{
+		Subsystem: Subsystem,
+		Config:    cc,
 	}
 	return nil
 }

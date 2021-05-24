@@ -1,16 +1,16 @@
 package cli
 
 import (
+	"context"
 	"os"
 	"runtime/pprof"
 	"runtime/trace"
-	"time"
 
 	"git.backbone/corpix/goboilerplate/pkg/log"
 )
 
 // writeProfile writes cpu and heap profile into files.
-func writeProfile(l log.Logger) error {
+func writeProfile(ctx context.Context, l log.Logger) error {
 	cpu, err := os.Create("cpu.prof")
 	if err != nil {
 		return err
@@ -29,8 +29,8 @@ func writeProfile(l log.Logger) error {
 		defer cpu.Close()
 		defer heap.Close()
 
-		l.Info().Msg("profiling, will exit in 30 seconds")
-		time.Sleep(30 * time.Second)
+		<-ctx.Done()
+
 		pprof.StopCPUProfile()
 		err := pprof.WriteHeapProfile(heap)
 		if err != nil {
@@ -46,7 +46,7 @@ func writeProfile(l log.Logger) error {
 }
 
 // writeTrace writes tracing data to file.
-func writeTrace(l log.Logger) error {
+func writeTrace(ctx context.Context, l log.Logger) error {
 	t, err := os.Create("trace.prof")
 	if err != nil {
 		return err
@@ -60,10 +60,9 @@ func writeTrace(l log.Logger) error {
 	go func() {
 		defer t.Close()
 
-		l.Info().Msg("tracing, will exit in 30 seconds")
-		time.Sleep(30 * time.Second)
-		trace.Stop()
+		<-ctx.Done()
 
+		trace.Stop()
 		os.Exit(0)
 	}()
 

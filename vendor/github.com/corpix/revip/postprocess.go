@@ -1,9 +1,8 @@
 package revip
 
 import (
+	"fmt"
 	"reflect"
-
-	"github.com/fatih/structs"
 )
 
 func Postprocess(c Config, op ...Option) error {
@@ -27,29 +26,59 @@ func postprocess(c Config, path []string, op []Option) error {
 		return err
 	}
 
-	//n
+	//
 
-	t := reflect.TypeOf(c)
-
-	if indirectType(t).Kind() != reflect.Struct {
-		return nil
-	}
+	kind := reflect.TypeOf(c).Kind()
+	value := reflect.ValueOf(c)
 
 	//
 
-	for _, v := range structs.Fields(c) {
-		if !v.IsExported() {
-			continue
+	switch kind {
+	case reflect.Ptr:
+		if value.IsNil() {
+			return nil // NOTE: skip nil's, this mean we don't have a default value
 		}
 
-		err := postprocess(
-			v.Value(),
-			append(path, v.Name()),
+		// FIXME: will call op twice if receiver is not pointer, not sure how to fix atm
+		v := indirectValue(value)
+		return postprocess(
+			v.Interface(),
+			path,
 			op,
 		)
-		if err != nil {
-			return err
+	case reflect.Struct:
+		return walkStruct(c, func(v reflect.Value, xs []string) error {
+			return postprocess(
+				v.Interface(),
+				append(path, xs...),
+				op,
+			)
+		})
+	case reflect.Array, reflect.Slice:
+		for n := 0; n < value.Len(); n++ {
+			err := postprocess(
+				value.Index(n).Interface(),
+				append(path, fmt.Sprintf("[%d]", n)),
+				op,
+			)
+			if err != nil {
+				return err
+			}
 		}
+	case reflect.Map:
+		for _, k := range value.MapKeys() {
+			err := postprocess(
+				value.MapIndex(k).Interface(),
+				append(path, fmt.Sprintf("[%q]", k.String())),
+				op,
+			)
+			if err != nil {
+				return err
+			}
+
+		}
+	default:
+		return nil
 	}
 
 	return nil
@@ -68,7 +97,7 @@ func WithDefaults() Option {
 }
 
 func WithValidation() Option {
-	return func (c Config, m ...OptionMeta) error {
+	return func(c Config, m ...OptionMeta) error {
 		v, ok := c.(Validatable)
 		if ok {
 			err := v.Validate()

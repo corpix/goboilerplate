@@ -22,11 +22,10 @@ in stdenv.mkDerivation rec {
   buildInputs = [
     glibcLocales bashInteractive man
     nix cacert curl utillinux coreutils
-    git jq yq-go tmux findutils gnumake    
+    git jq yq-go tmux findutils gnumake
 
-    go gopls golangci-lint
-    
-    (callPackage ./nix/release-cli.nix {})    
+    go gopls golangci-lint go-swag
+    prometheus
   ];
   shellHook = ''
     export root=$(pwd)

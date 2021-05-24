@@ -1,0 +1,23 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "Prometheus telemetry endpoint",
+        "title": "Telemetry",
+        "contact": {},
+        "license": {},
+        "version": "1.0"
+    },
+    "paths": {
+        "/": {
+            "get": {
+                "produces": [
+                    "text/plain"
+                ],
+                "summary": "Respond with prometheus metrics",
+                "responses": {
+                    "200": {}
+                }
+            }
+        }
+    }
+}
