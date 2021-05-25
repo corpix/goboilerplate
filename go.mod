@@ -7,6 +7,7 @@ require (
 	github.com/cloudflare/tableflip v1.2.2
 	github.com/cockroachdb/errors v1.8.4
 	github.com/corpix/revip v0.0.0-20210520092701-5e9c2358f4d6
+	github.com/davecgh/go-spew v1.1.1
 	github.com/labstack/echo/v4 v4.3.0
 	github.com/labstack/gommon v0.3.0
 	github.com/mattn/go-isatty v0.0.12

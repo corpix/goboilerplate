@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	watchdog "github.com/cloudflare/tableflip"
-	"github.com/corpix/revip"
+	revip "github.com/corpix/revip"
+	spew "github.com/davecgh/go-spew/spew"
 	cli "github.com/urfave/cli/v2"
 	di "go.uber.org/dig"
 
@@ -38,7 +40,6 @@ var (
 			Name:    "log-level",
 			Aliases: []string{"l"},
 			Usage:   "logging level (debug, info, error)",
-			Value:   "info",
 		},
 		&cli.StringSliceFlag{
 			Name:    "config",
@@ -113,6 +114,20 @@ func Before(ctx *cli.Context) error {
 		return err
 	}
 
+	err = c.Provide(func() *spew.ConfigState {
+		return &spew.ConfigState{
+			DisableMethods:          true,
+			DisableCapacities:       true,
+			DisablePointerAddresses: true,
+			Indent:                  "\t",
+			SortKeys:                true,
+			SpewKeys:                false,
+		}
+	})
+	if err != nil {
+		return err
+	}
+
 	err = c.Provide(func(ctx *cli.Context) (*config.Config, error) {
 		c, err := config.Load(ctx.StringSlice("config"))
 		if err != nil {
@@ -125,7 +140,15 @@ func Before(ctx *cli.Context) error {
 		return err
 	}
 
-	err = c.Provide(func(c *config.Config) (log.Logger, error) { return log.Create(*c.Log) })
+	err = c.Provide(func(ctx *cli.Context, c *config.Config) (log.Logger, error) {
+		lc := *c.Log
+		level := ctx.String("log-level")
+		if level != "" {
+			lc.Level = level
+		}
+
+		return log.Create(lc)
+	})
 	if err != nil {
 		return err
 	}
@@ -337,14 +360,13 @@ func ConfigPushAction(ctx *cli.Context) error {
 //
 
 func RootAction(ctx *cli.Context) error {
-	var err error
-
-	err = c.Invoke(func(l log.Logger) {
-		l.Info().Msg("running")
+	components := c.String()
+	_ = c.Invoke(func(l log.Logger) {
+		l.Trace().Msgf(
+			"component graph: %s",
+			strings.TrimSpace(components),
+		)
 	})
-	if err != nil {
-		return err
-	}
 
 	return c.Invoke(func(
 		ctx context.Context,
@@ -356,6 +378,8 @@ func RootAction(ctx *cli.Context) error {
 		errc chan error,
 		sig chan os.Signal,
 	) error {
+		l.Info().Msg("running")
+
 		err := w.Ready()
 		if err != nil {
 			return err

@@ -1,4 +1,4 @@
 log:
-  level: debug
+  level: trace
 telemetry:
   enable: true
