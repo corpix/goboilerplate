@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -63,30 +64,30 @@ var (
 		},
 	}
 	Commands = []*cli.Command{
-		&cli.Command{
+		{
 			Name:    "config",
 			Aliases: []string{"c"},
 			Usage:   "Configuration tools",
 			Subcommands: []*cli.Command{
-				&cli.Command{
+				{
 					Name:    "show-default",
 					Aliases: []string{"sd"},
 					Usage:   "Show default configuration",
 					Action:  ConfigShowDefaultAction,
 				},
-				&cli.Command{
+				{
 					Name:    "show",
 					Aliases: []string{"s"},
 					Usage:   "Show default configuration",
 					Action:  ConfigShowAction,
 				},
-				&cli.Command{
+				{
 					Name:    "validate",
 					Aliases: []string{"v"},
 					Usage:   "Validate configuration and exit",
 					Action:  ConfigValidateAction,
 				},
-				&cli.Command{
+				{
 					Name:      "push",
 					Aliases:   []string{"p"},
 					Usage:     "Push configuration to specified destination",
@@ -124,14 +125,91 @@ func Before(ctx *cli.Context) error {
 		return err
 	}
 
-	err = c.Provide(func(c *config.Config) (log.Logger, error) {
-		return log.Create(*c.Log)
+	err = c.Provide(func(c *config.Config) (log.Logger, error) { return log.Create(*c.Log) })
+	if err != nil {
+		return err
+	}
+
+	//
+
+	err = c.Provide(func() *telemetry.Registry { return telemetry.DefaultRegistry })
+	if err != nil {
+		return err
+	}
+
+	err = c.Provide(func(
+		c *config.Config,
+		l log.Logger,
+		r *telemetry.Registry,
+		w *watchdog.Upgrader,
+		running *sync.WaitGroup,
+		errc chan error,
+	) (*telemetry.Server, error) {
+		if c.Telemetry.Enable {
+			lr, err := w.Listen("tcp", c.Telemetry.Addr)
+			if err != nil {
+				return nil, err
+			}
+			t := telemetry.New(*c.Telemetry, l, r, lr)
+
+			running.Add(1)
+
+			go func() {
+				errc <- errors.Wrap(
+					t.ListenAndServe(),
+					"failed while listen and serve telemetry server",
+				)
+			}()
+
+			go func() {
+				defer running.Done()
+
+				<-w.Exit()
+
+				err = t.Shutdown(context.Background())
+				if err != nil {
+					panic(errors.Wrap(err, "telemetry shutdown failed"))
+				}
+			}()
+		}
+
+		return nil, nil
+	})
+
+	//
+
+	err = c.Provide(func(ctx *cli.Context, c *config.Config) (*watchdog.Upgrader, error) {
+		return watchdog.New(watchdog.Options{
+			UpgradeTimeout: c.ShutdownGraceTime,
+			PIDFile:        ctx.String("pid-file"),
+		})
 	})
 	if err != nil {
 		return err
 	}
-	err = c.Provide(func() *telemetry.Registry {
-		return telemetry.DefaultRegistry
+
+	err = c.Provide(func() *sync.WaitGroup { return &sync.WaitGroup{} })
+	if err != nil {
+		return err
+	}
+
+	err = c.Provide(func() chan error { return make(chan error, 1) })
+	if err != nil {
+		return err
+	}
+
+	err = c.Provide(func() chan os.Signal {
+		sig := make(chan os.Signal, 1)
+		signal.Notify(
+			sig,
+			syscall.SIGQUIT,
+			syscall.SIGTERM,
+			syscall.SIGINT,
+			syscall.SIGUSR1,
+			syscall.SIGUSR2,
+			syscall.SIGHUP,
+		)
+		return sig
 	})
 	if err != nil {
 		return err
@@ -231,7 +309,7 @@ func ConfigPushAction(ctx *cli.Context) error {
 
 		args := ctx.Args().Slice()
 		if len(args) < 1 {
-			return errors.New("subcommand requires an argument, example: etcd://127.0.0.1:2379/prefix,file://./config.out.yml")
+			return errors.New("subcommand requires an argument, example: ./config.out.yml")
 		}
 
 		destinations := args
@@ -268,115 +346,70 @@ func RootAction(ctx *cli.Context) error {
 		return err
 	}
 
-	return c.Invoke(func(ctx *cli.Context, cfg *config.Config) error {
-		var (
-			err  error
-			errc = make(chan error, 1)
-			w    *watchdog.Upgrader
-		)
-
-		w, err = watchdog.New(watchdog.Options{
-			UpgradeTimeout: cfg.ShutdownGraceTime,
-			PIDFile:        ctx.String("pid-file"),
-		})
+	return c.Invoke(func(
+		ctx context.Context,
+		cfg *config.Config,
+		w *watchdog.Upgrader,
+		l log.Logger,
+		t *telemetry.Server,
+		running *sync.WaitGroup,
+		errc chan error,
+		sig chan os.Signal,
+	) error {
+		err := w.Ready()
 		if err != nil {
 			return err
 		}
 
 		//
 
-		return c.Invoke(func(ctx context.Context, cfg *config.Config, l log.Logger, r *telemetry.Registry) error {
-			var t *telemetry.Server
+	loop:
+		for {
+			select {
+			case <-w.Exit():
+				break loop
+			case <-ctx.Done():
+				w.Stop()
+				break loop
 
-			if cfg.Telemetry.Enable {
-				lr, err := w.Listen("tcp", cfg.Telemetry.Addr)
+			case err := <-errc:
 				if err != nil {
 					return err
 				}
-				t = telemetry.New(*cfg.Telemetry, l, r, lr)
-
-				go func() {
-					errc <- errors.Wrap(t.ListenAndServe(), "failed while listen and serve telemetry server")
-				}()
-			}
-
-			//
-
-			var (
-				sig = make(chan os.Signal, 1)
-				err error
-			)
-
-			signal.Notify(
-				sig,
-				syscall.SIGINT,
-				syscall.SIGQUIT,
-				syscall.SIGTERM,
-				syscall.SIGUSR2,
-				syscall.SIGHUP,
-			)
-
-			err = w.Ready()
-			if err != nil {
-				return err
-			}
-
-			//
-
-		loop:
-			for {
-				select {
-				case <-w.Exit():
-					break loop
-				case <-ctx.Done():
-					break loop
-
-				case err := <-errc:
-					if err != nil {
-						return err
-					}
-				case si := <-sig:
-					l.Info().Str("signal", si.String()).Msg("received signal")
-					switch si {
-					case syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT:
-						w.Stop()
-					case syscall.SIGUSR2, syscall.SIGHUP:
-						err = w.Upgrade()
-						if err != nil {
-							return err
-						}
-					}
-				case <-bus.Config:
+			case si := <-sig:
+				l.Info().Str("signal", si.String()).Msg("received signal")
+				switch si {
+				case syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT:
+					w.Stop()
+				case syscall.SIGUSR1, syscall.SIGUSR2, syscall.SIGHUP:
 					err = w.Upgrade()
 					if err != nil {
 						return err
 					}
 				}
-			}
-
-			//
-
-			defer os.Exit(0)
-			l.Info().Msg("shutdown watchdog")
-
-			time.AfterFunc(cfg.ShutdownGraceTime, func() {
-				l.Warn().
-					Dur("graceTime", cfg.ShutdownGraceTime).
-					Msg("Graceful shutdown timed out")
-				os.Exit(1)
-			})
-
-			//
-
-			if cfg.Telemetry.Enable {
-				err = t.Shutdown(context.Background())
+			case <-bus.Config:
+				err = w.Upgrade()
 				if err != nil {
-					return errors.Wrap(err, "telemetry shutdown failed")
+					return err
 				}
 			}
+		}
 
-			return nil
+		//
+
+		defer os.Exit(0)
+		l.Info().Msg("shutdown watchdog")
+
+		time.AfterFunc(cfg.ShutdownGraceTime, func() {
+			l.Warn().
+				Dur("graceTime", cfg.ShutdownGraceTime).
+				Msg("graceful shutdown timed out")
+			os.Exit(1)
 		})
+
+		running.Wait() // wait for other running components to finish
+
+		return nil
 	})
 }
 
