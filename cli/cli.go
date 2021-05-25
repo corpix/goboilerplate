@@ -194,6 +194,7 @@ func Before(ctx *cli.Context) error {
 					panic(errors.Wrap(err, "telemetry shutdown failed"))
 				}
 			}()
+			return t, nil
 		}
 
 		return nil, nil
