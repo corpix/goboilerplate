@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -40,12 +39,12 @@ var (
 			Usage:   "logging level (debug, info, error)",
 			Value:   "info",
 		},
-		&cli.StringFlag{
+		&cli.StringSliceFlag{
 			Name:    "config",
 			Aliases: []string{"c"},
 			EnvVars: []string{config.EnvironPrefix + "_CONFIG"},
 			Usage:   "path to application configuration file/files (separate multiple files with comma)",
-			Value:   "config.yml",
+			Value:   cli.NewStringSlice("config.yml"),
 		},
 
 		//
@@ -114,7 +113,7 @@ func Before(ctx *cli.Context) error {
 	}
 
 	err = c.Provide(func(ctx *cli.Context) (*config.Config, error) {
-		c, err := config.Load(strings.Split(ctx.String("config"), ","))
+		c, err := config.Load(ctx.StringSlice("config"))
 		if err != nil {
 			return nil, err
 		}
@@ -197,7 +196,7 @@ func ConfigShowAction(ctx *cli.Context) error {
 
 func ConfigValidateAction(ctx *cli.Context) error {
 	return c.Invoke(func(l log.Logger) error {
-		configs := strings.Split(ctx.String("config"), ",")
+		configs := ctx.StringSlice("config")
 		c, err := config.Load(
 			configs,
 			config.InitPostprocessors...,
@@ -221,7 +220,7 @@ func ConfigValidateAction(ctx *cli.Context) error {
 
 func ConfigPushAction(ctx *cli.Context) error {
 	return c.Invoke(func(l log.Logger) error {
-		configs := strings.Split(ctx.String("config"), ",")
+		configs := ctx.StringSlice("config")
 		c, err := config.Load(
 			configs,
 			config.LocalPostprocessors...,
@@ -235,8 +234,7 @@ func ConfigPushAction(ctx *cli.Context) error {
 			return errors.New("subcommand requires an argument, example: etcd://127.0.0.1:2379/prefix,file://./config.out.yml")
 		}
 
-		destinations := strings.Split(args[0], ",")
-
+		destinations := args
 		for _, destination := range destinations {
 			push, err := revip.ToURL(destination, config.Marshaler)
 			if err != nil {
