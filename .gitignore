@@ -6,3 +6,4 @@
 /.local/*
 *.prof
 *.pid
+/.tmux

@@ -97,6 +97,18 @@ build $(binary): # build application `binary`
 		"                                                        \
 		./main.go
 
+.PHONY: fmt
+fmt: # run go fmt
+	go fmt ./...
+
+.PHONY: tidy
+tidy: # run go mod tidy
+	go mod tidy
+
+.PHONY: vendor
+vendor: # run go mod vendor
+	go mod vendor
+
 .PHONY: run
 run: build # run application
 	$(binary)

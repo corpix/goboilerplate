@@ -24,19 +24,7 @@ var doc = `{
     },
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
-    "paths": {
-        "/": {
-            "get": {
-                "produces": [
-                    "text/plain"
-                ],
-                "summary": "Respond with prometheus metrics",
-                "responses": {
-                    "200": {}
-                }
-            }
-        }
-    }
+    "paths": {}
 }`
 
 type swaggerInfo struct {
@@ -50,12 +38,12 @@ type swaggerInfo struct {
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = swaggerInfo{
-	Version:     "1.0",
+	Version:     "",
 	Host:        "",
 	BasePath:    "",
 	Schemes:     []string{},
-	Title:       "Telemetry",
-	Description: "Prometheus telemetry endpoint",
+	Title:       "",
+	Description: "",
 }
 
 type s struct{}

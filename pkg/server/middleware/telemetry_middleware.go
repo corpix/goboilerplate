@@ -1,4 +1,4 @@
-package telemetry
+package middleware
 
 import (
 	"net/http"
@@ -6,9 +6,12 @@ import (
 	"time"
 
 	echo "github.com/labstack/echo/v4"
+
+	"git.backbone/corpix/goboilerplate/pkg/telemetry/collector"
+	"git.backbone/corpix/goboilerplate/pkg/telemetry/registry"
 )
 
-func approxRequestSize(r *http.Request) int {
+func telemetryApproxRequestSize(r *http.Request) int {
 	s := 0
 	if r.URL != nil {
 		s = len(r.URL.Path)
@@ -30,34 +33,34 @@ func approxRequestSize(r *http.Request) int {
 	return s
 }
 
-func Middleware(r *Registry, subsystem string) echo.MiddlewareFunc {
-	reqTot := NewCounterVec(
-		CounterOpts{
-			Name: Name(subsystem, "requests", "total"),
+func NewTelemetry(r *registry.Registry, subsystem string) echo.MiddlewareFunc {
+	reqTot := collector.NewCounterVec(
+		collector.CounterOpts{
+			Name: collector.Name(subsystem, "requests", "total"),
 			Help: "How many HTTP requests processed, partitioned by status code and HTTP method.",
 		},
 		[]string{"code", "method", "path"},
 	)
 
-	reqDur := NewHistogramVec(
-		HistogramOpts{
-			Name: Name(subsystem, "request", "duration", "seconds"),
+	reqDur := collector.NewHistogramVec(
+		collector.HistogramOpts{
+			Name: collector.Name(subsystem, "request", "duration", "seconds"),
 			Help: "The HTTP request latencies in seconds.",
 		},
 		[]string{"code", "method", "path"},
 	)
 
-	reqSz := NewHistogramVec(
-		HistogramOpts{
-			Name: Name(subsystem, "request", "size", "bytes"),
+	reqSz := collector.NewHistogramVec(
+		collector.HistogramOpts{
+			Name: collector.Name(subsystem, "request", "size", "bytes"),
 			Help: "The HTTP request sizes in bytes.",
 		},
 		[]string{"code", "method", "path"},
 	)
 
-	resSz := NewHistogramVec(
-		HistogramOpts{
-			Name: Name(subsystem, "response", "size", "bytes"),
+	resSz := collector.NewHistogramVec(
+		collector.HistogramOpts{
+			Name: collector.Name(subsystem, "response", "size", "bytes"),
 			Help: "The HTTP response sizes in bytes.",
 		},
 		[]string{"code", "method", "path"},
@@ -76,17 +79,12 @@ func Middleware(r *Registry, subsystem string) echo.MiddlewareFunc {
 		return func(c echo.Context) error {
 			start := time.Now()
 			req := c.Request()
-			reqSize := approxRequestSize(req)
+			reqSize := telemetryApproxRequestSize(req)
 
 			//
 
 			err := next(c)
-			if err != nil {
-				// continue on error to count metrics
-				c.Error(err)
-			}
-
-			//
+			// continue on error to count metrics
 
 			status := strconv.Itoa(c.Response().Status)
 			path := req.URL.Path

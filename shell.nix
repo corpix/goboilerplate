@@ -23,7 +23,7 @@ in stdenv.mkDerivation rec {
     glibcLocales bashInteractive man
     nix cacert curl utillinux coreutils
     git jq yq-go tmux findutils gnumake
-
+    skopeo
     go gopls golangci-lint go-swag
     prometheus
   ];

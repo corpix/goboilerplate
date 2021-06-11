@@ -5,34 +5,37 @@ import (
 	"net"
 	"net/http"
 
-	"git.backbone/corpix/goboilerplate/pkg/log"
-	"git.backbone/corpix/goboilerplate/pkg/middleware"
-
-	echo "github.com/labstack/echo/v4"
 	echomw "github.com/labstack/echo/v4/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	"git.backbone/corpix/goboilerplate/pkg/log"
+	"git.backbone/corpix/goboilerplate/pkg/server"
+	"git.backbone/corpix/goboilerplate/pkg/telemetry/registry"
 )
 
-type Listener net.Listener
+type (
+	Registry = registry.Registry
+	Listener net.Listener
+)
+
+var DefaultRegistry = registry.DefaultRegistry
+
+//
 
 type Server struct {
-	config   Config
-	log      log.Logger
-	listener net.Listener
-	srv      *echo.Echo
-	handler  http.Handler
+	config  Config
+	log     log.Logger
+	srv     *server.Server
+	handler http.Handler
 }
 
 func (s *Server) ListenAndServe() error {
-	srv := &http.Server{
-		Addr:         s.config.Addr,
-		ReadTimeout:  s.config.Timeout.Read,
-		WriteTimeout: s.config.Timeout.Write,
-	}
-
-	s.srv.Listener = s.listener
-
-	err := s.srv.StartServer(srv)
+	err := s.srv.StartServer(
+		server.NewHTTP(
+			s.config.Addr,
+			server.HTTPTimeoutOption(*s.config.Timeout),
+		),
+	)
 	if err == http.ErrServerClosed {
 		s.log.
 			Warn().
@@ -44,7 +47,7 @@ func (s *Server) ListenAndServe() error {
 	return err
 }
 
-func (s *Server) Handle(ctx echo.Context) error {
+func (s *Server) Handle(ctx server.Context) error {
 	s.handler.ServeHTTP(
 		ctx.Response().Writer,
 		ctx.Request(),
@@ -65,16 +68,6 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return s.srv.Shutdown(ctx)
 }
 
-// see: https://github.com/swaggo/swag#declarative-comments-format
-// @title Telemetry
-// @version 1.0
-// @description Prometheus telemetry endpoint
-
-// @BasePath /
-// @Router / [get]
-// @Produce text/plain
-// @Summary Respond with prometheus metrics
-// @Success 200
 func New(c Config, l log.Logger, r *Registry, lr Listener) *Server {
 	var addr string
 
@@ -94,22 +87,15 @@ func New(c Config, l log.Logger, r *Registry, lr Listener) *Server {
 		),
 	)
 
-	e := echo.New()
-	e.HideBanner = true
-	e.Logger = &middleware.Logger{Logger: l}
-
-	e.Use(middleware.Log(l, "processed telemetry request"))
+	e := server.New(Subsystem, l, r)
+	e.Listener = lr
 	e.Use(echomw.BodyLimit("0"))
-	e.Use(echomw.Recover())
-
-	middleware.MountSwagger(e, "/swagger")
 
 	s := &Server{
-		config:   c,
-		log:      l,
-		listener: lr,
-		srv:      e,
-		handler:  h,
+		config:  c,
+		log:     l,
+		srv:     e,
+		handler: h,
 	}
 
 	e.GET(c.Path, s.Handle)

@@ -1,9 +1,10 @@
-package telemetry
+package registry
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"git.backbone/corpix/goboilerplate/pkg/meta"
+	"git.backbone/corpix/goboilerplate/pkg/telemetry/collector"
 )
 
 type Registry = prometheus.Registry
@@ -15,8 +16,8 @@ func init() {
 	DefaultRegistry.MustRegister(prometheus.NewGoCollector())
 
 	DefaultRegistry.MustRegister(
-		&SelfCollector{
-			prometheus.MustNewConstMetric(
+		&collector.Self{
+			Self: prometheus.MustNewConstMetric(
 				prometheus.NewDesc(
 					"go_build_info",
 					"Meta information about application",

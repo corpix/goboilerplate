@@ -2,7 +2,9 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/signal"
 	"strings"
@@ -18,9 +20,11 @@ import (
 
 	"git.backbone/corpix/goboilerplate/pkg/bus"
 	"git.backbone/corpix/goboilerplate/pkg/config"
+	"git.backbone/corpix/goboilerplate/pkg/crypto"
 	"git.backbone/corpix/goboilerplate/pkg/errors"
 	"git.backbone/corpix/goboilerplate/pkg/log"
 	"git.backbone/corpix/goboilerplate/pkg/meta"
+	"git.backbone/corpix/goboilerplate/pkg/server/session"
 	"git.backbone/corpix/goboilerplate/pkg/telemetry"
 )
 
@@ -39,7 +43,7 @@ var (
 		&cli.StringFlag{
 			Name:    "log-level",
 			Aliases: []string{"l"},
-			Usage:   "logging level (debug, info, error)",
+			Usage:   "logging level (debug, info, warn, error)",
 		},
 		&cli.StringSliceFlag{
 			Name:    "config",
@@ -97,6 +101,40 @@ var (
 				},
 			},
 		},
+		{
+			Name:    "server",
+			Aliases: []string{"s"},
+			Usage:   "Server tools",
+			Subcommands: []*cli.Command{
+				{
+					Name:    "session",
+					Aliases: []string{"s"},
+					Usage:   "Session tools",
+					Subcommands: []*cli.Command{
+						{
+							Name:      "show",
+							Aliases:   []string{"s"},
+							Usage:     "Show session passed as argument (if empty will read from stdin)",
+							ArgsUsage: "[session]",
+							Action:    ServerSessionShowAction,
+							Flags: []cli.Flag{
+								&cli.StringFlag{
+									Name:    "key",
+									Aliases: []string{"k"},
+									EnvVars: []string{config.EnvironPrefix + "_SERVER_SESSION_SHOW_KEY"},
+									Usage:   "encryption key",
+								},
+								&cli.BoolFlag{
+									Name:    "json",
+									Aliases: []string{"j"},
+									Usage:   "use json format",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	c *di.Container
@@ -116,13 +154,22 @@ func Before(ctx *cli.Context) error {
 
 	err = c.Provide(func() *spew.ConfigState {
 		return &spew.ConfigState{
-			DisableMethods:          true,
+			DisableMethods:          false,
 			DisableCapacities:       true,
 			DisablePointerAddresses: true,
-			Indent:                  "\t",
+			Indent:                  "  ",
 			SortKeys:                true,
 			SpewKeys:                false,
 		}
+	})
+	if err != nil {
+		return err
+	}
+
+	err = c.Provide(func() *json.Encoder {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc
 	})
 	if err != nil {
 		return err
@@ -153,12 +200,16 @@ func Before(ctx *cli.Context) error {
 		return err
 	}
 
-	//
-
+	err = c.Provide(func() crypto.Rand { return crypto.DefaultRand })
+	if err != nil {
+		return err
+	}
 	err = c.Provide(func() *telemetry.Registry { return telemetry.DefaultRegistry })
 	if err != nil {
 		return err
 	}
+
+	//
 
 	err = c.Provide(func(
 		c *config.Config,
@@ -168,6 +219,23 @@ func Before(ctx *cli.Context) error {
 		running *sync.WaitGroup,
 		errc chan error,
 	) (*telemetry.Server, error) {
+		start := func(t *telemetry.Server) {
+			errc <- errors.Wrap(
+				t.ListenAndServe(),
+				"failed while listen and serve telemetry server",
+			)
+		}
+
+		finalize := func(t *telemetry.Server) {
+			defer running.Done()
+			<-w.Exit()
+
+			err = t.Shutdown(context.Background())
+			if err != nil {
+				panic(errors.Wrap(err, "telemetry shutdown failed"))
+			}
+		}
+
 		if c.Telemetry.Enable {
 			lr, err := w.Listen("tcp", c.Telemetry.Addr)
 			if err != nil {
@@ -177,28 +245,17 @@ func Before(ctx *cli.Context) error {
 
 			running.Add(1)
 
-			go func() {
-				errc <- errors.Wrap(
-					t.ListenAndServe(),
-					"failed while listen and serve telemetry server",
-				)
-			}()
+			go start(t)
+			go finalize(t)
 
-			go func() {
-				defer running.Done()
-
-				<-w.Exit()
-
-				err = t.Shutdown(context.Background())
-				if err != nil {
-					panic(errors.Wrap(err, "telemetry shutdown failed"))
-				}
-			}()
 			return t, nil
 		}
 
 		return nil, nil
 	})
+	if err != nil {
+		return err
+	}
 
 	//
 
@@ -248,7 +305,11 @@ func Before(ctx *cli.Context) error {
 		})
 	} else {
 		err = c.Provide(func(ctx *cli.Context) context.Context {
-			c, _ := context.WithTimeout(context.Background(), duration)
+			c, cancel := context.WithTimeout(context.Background(), duration)
+			go func() {
+				<-c.Done()
+				cancel()
+			}()
 			return c
 		})
 	}
@@ -353,6 +414,43 @@ func ConfigPushAction(ctx *cli.Context) error {
 			Strs("configs", configs).
 			Strs("destinations", destinations).
 			Msg("configuration pushed")
+
+		return nil
+	})
+}
+
+func ServerSessionShowAction(ctx *cli.Context) error {
+	return c.Invoke(func(rand crypto.Rand, enc *json.Encoder, debug *spew.ConfigState) error {
+		key := ctx.String("key")
+
+		s, err := session.New(session.Config{EncryptionKey: key}, rand)
+		if err != nil {
+			return err
+		}
+
+		buf := []byte(ctx.Args().First())
+		if len(buf) == 0 {
+			buf, err = ioutil.ReadAll(os.Stdin)
+			if err != nil {
+				return err
+			}
+		}
+
+		err = s.Load(buf)
+		if err != nil {
+			return err
+		}
+
+		if ctx.Bool("json") {
+			err = enc.Encode(s.Unwrap())
+			if err != nil {
+				return err
+			}
+		} else {
+			debug.Dump(s.Unwrap())
+		}
+
+		_, _ = os.Stdout.Write([]byte("\n"))
 
 		return nil
 	})

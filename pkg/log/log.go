@@ -20,6 +20,7 @@ type (
 const (
 	Trace = zerolog.TraceLevel
 	Debug = zerolog.DebugLevel
+	Info  = zerolog.InfoLevel
 	Warn  = zerolog.WarnLevel
 	Error = zerolog.ErrorLevel
 	Panic = zerolog.PanicLevel
