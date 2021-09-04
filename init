@@ -1,0 +1,82 @@
+#!/usr/bin/env python
+from sys import stdin, stdout, stderr, argv
+from os import getcwd, environ, chmod, write, fsync, close, remove
+from os.path import expanduser, realpath, join as joinpath
+from argparse import ArgumentParser
+from shlex import quote as shell_escape
+from collections import defaultdict
+from shutil import which
+from subprocess import PIPE as pipe_stream, Popen
+
+## generalized helper functions
+
+def filter_by(samples, subjects):
+    for subject in subjects:
+        for sample in samples:
+            if sample not in subject:
+                yield subject
+
+def command(cmd, *args, streams=(stdin,stdout,stderr,), communicate=False, decode=True, **kwargs):
+    cmd_args = [which(cmd)] + list(args)
+    stderr.write("run: {}\n".format(" ".join(cmd_args)))
+    proc = Popen(
+        cmd_args,
+        stdin=streams[0],
+        stdout=streams[1],
+        stderr=streams[2],
+        **kwargs
+    )
+    if communicate:
+        out, err = proc.communicate()
+    code = proc.wait()
+    if communicate:
+        if code != 0:
+            if err:
+                stderr.buffer.write(err)
+        else:
+            return out.decode("utf8") if out is not None and decode else out
+    if code != 0:
+        raise Exception("Non zero exit code for command {}".format(cmd_args))
+
+def arguments(argv):
+    p = ArgumentParser(description="initialize project from boilerplate")
+
+    p.add_argument("--remote", type=str, default="git.backbone", help="vcs remote hostname")
+    p.add_argument("--group", type=str, default="corpix", help="vcs group name where project will be stored")
+    p.add_argument("--name", type=str, required=True, help="project name")
+
+    nargs, rest = p.parse_known_args(argv)
+    args = nargs.__dict__
+    args["rest"] = rest
+
+    return args
+
+def main(argv):
+    args = arguments(argv)
+
+    selectors = [
+        "*.go",
+        "*.nix"
+    ]
+    infra_files = [
+        "Makefile",
+        "README.md",
+    ]
+    files = ["go.mod"] + infra_files
+    excludes = [
+        "/vendor/"
+    ]
+
+    for selector in selectors:
+        files += list(filter_by(excludes, command(
+            "find", ".", "-type", "f", "-name", selector,
+            streams=(stdin,pipe_stream,stderr,),
+            communicate=True
+        ).strip().split("\n")))
+
+    command("perl", "-p", "-i", "-e", "s|git.backbone/corpix/goboilerplate|{remote}/{group}/{name}|g".format(**args), *files)
+    command("perl", "-p", "-i", "-e", "s|goboilerplate|{name}|g".format(**args), *files)
+    command("perl", "-p", "-i", "-e", "s|git.backbone|{remote}|g".format(**args), *files)
+    command("perl", "-p", "-i", "-e", "s|corpix|{group}|g".format(**args), *infra_files)
+
+main(argv)

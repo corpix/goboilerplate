@@ -7,33 +7,26 @@ group                = corpix
 remote               = git.backbone
 namespace            = $(remote)/$(group)
 version             ?= development
+os                  ?=
+binary              ?= ./main
+args                ?=
 container_namespace ?= ghcr.io/$(group)/$(name)
 container_tag       ?= latest
 docker_user         ?=
 docker_password     ?=
-os                  ?=
-binary              ?= ./main
-args                ?=
-
-export GOFLAGS ?=
-
-PARALLEL_JOBS     ?= 8
-NIX_OPTS          ?= --show-trace
 
 ## bindings
 
-root                := $(dir $(realpath $(firstword $(MAKEFILE_LIST))))
+root                := $(patsubst %/,%,$(dir $(realpath $(firstword $(MAKEFILE_LIST)))))
 nix_dir             := nix
 pkg_prefix          := $(namespace)/$(name)
 tmux                := tmux -2 -f $(root)/.tmux.conf -S $(root)/.tmux
 tmux_session        := $(name)
-nix                 := nix $(NIX_OPTS)
-shell_volume_nix    := nix
+nix                 := nix --show-trace $(nix_opts)
 
 ### reusable and long opts for commands inside rules
 
-add_shell_opts ?=
-shell_opts = -v $(shell_volume_nix):/nix:rw     \
+shell_opts = -v nix:/nix:rw                     \
 	-v $(root):/chroot                      \
 	-e COLUMNS=$(COLUMNS)                   \
 	-e LINES=$(LINES)                       \
@@ -42,7 +35,7 @@ shell_opts = -v $(shell_volume_nix):/nix:rw     \
 	-e HOME=/chroot                         \
 	-w /chroot                              \
 	--hostname localhost                    \
-	$(foreach v,$(ports), -p $(v):$(v) ) $(add_shell_opts)
+	$(foreach v,$(ports), -p $(v):$(v) )
 
 ## helpers
 
@@ -156,9 +149,9 @@ run/nix/repl: # run nix repl for nixpkgs from env
 
 .PHONY: run/tmux/session
 run/tmux/session: # start development environment
-	@$(tmux) has-session    -t $(tmux_session) && $(call fail,tmux session $(tmux_session) already exists$(,) use: '$(tmux) attach-session -t $(tmux_session)' to attach) || true
-	@$(tmux) new-session    -s $(tmux_session) -n console -d
-	@$(tmux) select-window  -t $(tmux_session):0
+	@$(tmux) has-session -t $(tmux_session) && $(call fail,tmux session $(tmux_session) already exists$(,) use: '$(tmux) attach-session -t $(tmux_session)' to attach) || true
+	@$(tmux) new-session -s $(tmux_session) -n console -d
+	@while ! $(tmux) select-window -t $(tmux_session):0; do sleep 0.5; done
 
 	@if [ -f $(root)/.personal.tmux.conf ]; then             \
 		$(tmux) source-file $(root)/.personal.tmux.conf; \
