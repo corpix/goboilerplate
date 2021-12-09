@@ -31,9 +31,9 @@ type Server struct {
 
 func (s *Server) ListenAndServe() error {
 	err := s.srv.StartServer(
-		server.NewHTTP(
+		server.NewHTTPServer(
 			s.config.Addr,
-			server.HTTPTimeoutOption(*s.config.Timeout),
+			server.HTTPTimeoutOption(*s.config.HTTP.Timeout),
 		),
 	)
 	if err == http.ErrServerClosed {
@@ -68,7 +68,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return s.srv.Shutdown(ctx)
 }
 
-func New(c Config, l log.Logger, r *Registry, lr Listener) *Server {
+func New(c Config, l log.Logger, r *Registry, lr Listener) (*Server, error) {
 	var addr string
 
 	if lr != nil {
@@ -87,7 +87,10 @@ func New(c Config, l log.Logger, r *Registry, lr Listener) *Server {
 		),
 	)
 
-	e := server.New(Subsystem, l, r)
+	e, err := server.New(*c.HTTP, Subsystem, "", l, r)
+	if err != nil {
+		return nil, err
+	}
 	e.Listener = lr
 	e.Use(echomw.BodyLimit("0"))
 
@@ -100,5 +103,5 @@ func New(c Config, l log.Logger, r *Registry, lr Listener) *Server {
 
 	e.GET(c.Path, s.Handle)
 
-	return s
+	return s, nil
 }

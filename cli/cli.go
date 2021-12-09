@@ -21,9 +21,12 @@ import (
 	"git.backbone/corpix/goboilerplate/pkg/bus"
 	"git.backbone/corpix/goboilerplate/pkg/config"
 	"git.backbone/corpix/goboilerplate/pkg/crypto"
+	"git.backbone/corpix/goboilerplate/pkg/crypto/container"
 	"git.backbone/corpix/goboilerplate/pkg/errors"
 	"git.backbone/corpix/goboilerplate/pkg/log"
 	"git.backbone/corpix/goboilerplate/pkg/meta"
+	"git.backbone/corpix/goboilerplate/pkg/reflect"
+	"git.backbone/corpix/goboilerplate/pkg/server/csrf"
 	"git.backbone/corpix/goboilerplate/pkg/server/session"
 	"git.backbone/corpix/goboilerplate/pkg/telemetry"
 )
@@ -119,15 +122,178 @@ var (
 							Action:    ServerSessionShowAction,
 							Flags: []cli.Flag{
 								&cli.StringFlag{
+									Name:    "container",
+									Aliases: []string{"c"},
+									Usage:   fmt.Sprintf("container type, one of %v", reflect.IndirectValue(reflect.ValueOf(container.Types)).MapKeys()),
+									Value:   string(container.SecretBoxType),
+								},
+								&cli.StringFlag{
+									Name:    "serializer",
+									Aliases: []string{"s"},
+									Usage:   fmt.Sprintf("serializer type, one of %v", reflect.IndirectValue(reflect.ValueOf(container.SerializerTypes)).MapKeys()),
+								},
+								&cli.StringFlag{
+									Name:    "sealer",
+									Aliases: []string{"e"},
+									Usage:   fmt.Sprintf("sealer type, one of %v", reflect.IndirectValue(reflect.ValueOf(container.SealerTypes)).MapKeys()),
+								},
+								&cli.StringFlag{
+									Name:    "compressor",
+									Aliases: []string{"d"},
+									Usage:   fmt.Sprintf("compressor type, one of %v", reflect.IndirectValue(reflect.ValueOf(container.CompressorTypes)).MapKeys()),
+								},
+								&cli.StringFlag{
+									Name:    "representer",
+									Aliases: []string{"p"},
+									Usage:   fmt.Sprintf("representer type, one of %v", reflect.IndirectValue(reflect.ValueOf(container.RepresenterTypes)).MapKeys()),
+								},
+								&cli.StringFlag{
+									Name:     "key",
+									Aliases:  []string{"k"},
+									Usage:    "encryption key",
+									Required: true,
+								},
+								&cli.BoolFlag{
+									Name:    "json",
+									Aliases: []string{"j"},
+									Usage:   "use json format",
+								},
+								&cli.StringFlag{
+									Name:  "jwt-algo",
+									Usage: "jwt algorithm to use",
+								},
+							},
+						},
+						{
+							Name:      "validate",
+							Aliases:   []string{"v"},
+							Usage:     "Validate session passed as argument (if empty will read from stdin)",
+							ArgsUsage: "[session]",
+							Action:    ServerSessionValidateAction,
+							Flags: []cli.Flag{
+								&cli.StringFlag{
+									Name:    "container",
+									Aliases: []string{"c"},
+									Usage:   fmt.Sprintf("container type, one of %v", reflect.IndirectValue(reflect.ValueOf(container.Types)).MapKeys()),
+									Value:   string(container.SecretBoxType),
+								},
+								&cli.StringFlag{
+									Name:    "serializer",
+									Aliases: []string{"s"},
+									Usage:   fmt.Sprintf("serializer type, one of %v", reflect.IndirectValue(reflect.ValueOf(container.SerializerTypes)).MapKeys()),
+								},
+								&cli.StringFlag{
+									Name:    "sealer",
+									Aliases: []string{"e"},
+									Usage:   fmt.Sprintf("sealer type, one of %v", reflect.IndirectValue(reflect.ValueOf(container.SealerTypes)).MapKeys()),
+								},
+								&cli.StringFlag{
+									Name:    "compressor",
+									Aliases: []string{"d"},
+									Usage:   fmt.Sprintf("compressor type, one of %v", reflect.IndirectValue(reflect.ValueOf(container.CompressorTypes)).MapKeys()),
+								},
+								&cli.StringFlag{
+									Name:    "representer",
+									Aliases: []string{"p"},
+									Usage:   fmt.Sprintf("representer type, one of %v", reflect.IndirectValue(reflect.ValueOf(container.RepresenterTypes)).MapKeys()),
+								},
+								&cli.StringFlag{
+									Name:     "key",
+									Aliases:  []string{"k"},
+									Usage:    "encryption key",
+									Required: true,
+								},
+								&cli.StringFlag{
+									Name:  "jwt-algo",
+									Usage: "jwt algorithm to use",
+								},
+							},
+						},
+					},
+				},
+				{
+					Name:    "csrf",
+					Aliases: []string{"t"},
+					Usage:   "CSRF token tools",
+					Subcommands: []*cli.Command{
+						{
+							Name:    "issue",
+							Aliases: []string{"s"},
+							Usage:   "Issue CSRF token",
+							Action:  ServerCSRFIssueAction,
+							Flags: []cli.Flag{
+								&cli.StringFlag{
+									Name:     "key",
+									Aliases:  []string{"k"},
+									EnvVars:  []string{config.EnvironPrefix + "_SERVER_CSRF_ISSUE_KEY"},
+									Usage:    "encryption key",
+									Required: true,
+								},
+								&cli.StringFlag{
+									Name:    "source",
+									Aliases: []string{"i"},
+									EnvVars: []string{config.EnvironPrefix + "_SERVER_CSRF_ISSUE_SOURCE"},
+									Usage:   "token source (initiator)",
+								},
+								&cli.StringFlag{
+									Name:    "subject",
+									Aliases: []string{"r"},
+									EnvVars: []string{config.EnvironPrefix + "_SERVER_CSRF_ISSUE_SUBJECT"},
+									Usage:   "token subject (receiver)",
+								},
+								&cli.DurationFlag{
+									Name:    "ttl",
+									Aliases: []string{"t"},
+									EnvVars: []string{config.EnvironPrefix + "_SERVER_CSRF_ISSUE_TTL"},
+									Value:   1 * time.Hour,
+									Usage:   "token time to live",
+								},
+							},
+						},
+						{
+							Name:      "show",
+							Aliases:   []string{"s"},
+							Usage:     "Show CSRF token passed as argument (if empty will read from stdin)",
+							ArgsUsage: "[csrf]",
+							Action:    ServerCSRFShowAction,
+							Flags: []cli.Flag{
+								&cli.StringFlag{
 									Name:    "key",
 									Aliases: []string{"k"},
-									EnvVars: []string{config.EnvironPrefix + "_SERVER_SESSION_SHOW_KEY"},
+									EnvVars: []string{config.EnvironPrefix + "_SERVER_CSRF_SHOW_KEY"},
 									Usage:   "encryption key",
 								},
 								&cli.BoolFlag{
 									Name:    "json",
 									Aliases: []string{"j"},
 									Usage:   "use json format",
+								},
+							},
+						},
+						{
+							Name:      "validate",
+							Aliases:   []string{"s"},
+							Usage:     "Validate CSRF token passed as argument (if empty will read from stdin)",
+							ArgsUsage: "[csrf]",
+							Action:    ServerCSRFValidateAction,
+							Flags: []cli.Flag{
+								&cli.StringFlag{
+									Name:    "key",
+									Aliases: []string{"k"},
+									EnvVars: []string{config.EnvironPrefix + "_SERVER_CSRF_VALIDATE_KEY"},
+									Usage:   "encryption key",
+								},
+								&cli.StringFlag{
+									Name:    "source",
+									Aliases: []string{"i"},
+									EnvVars: []string{config.EnvironPrefix + "_SERVER_CSRF_VALIDATE_SOURCE"},
+									Usage:   "token source (initiator)",
+								},
+								&cli.StringFlag{
+									Name:    "subject",
+									Aliases: []string{"r"},
+									EnvVars: []string{config.EnvironPrefix + "_SERVER_CSRF_VALIDATE_SUBJECT"},
+									Usage:   "token subject (receiver)",
 								},
 							},
 						},
@@ -241,7 +407,10 @@ func Before(ctx *cli.Context) error {
 			if err != nil {
 				return nil, err
 			}
-			t := telemetry.New(*c.Telemetry, l, r, lr)
+			t, err := telemetry.New(*c.Telemetry, l, r, lr)
+			if err != nil {
+				return nil, err
+			}
 
 			running.Add(1)
 
@@ -423,7 +592,21 @@ func ServerSessionShowAction(ctx *cli.Context) error {
 	return c.Invoke(func(rand crypto.Rand, enc *json.Encoder, debug *spew.ConfigState) error {
 		key := ctx.String("key")
 
-		s, err := session.New(session.Config{EncryptionKey: key}, rand)
+		c := &container.Config{
+			Type:        ctx.String("container"),
+			Serializer:  ctx.String("serializer"),
+			Sealer:      ctx.String("sealer"),
+			Compressor:  ctx.String("compressor"),
+			Representer: ctx.String("representer"),
+			Key:         key,
+			Jwt:         &container.JwtConfig{Algo: ctx.String("jwt-algo")},
+		}
+		sc := &session.Config{Container: c}
+		err := config.Postprocess(sc)
+		if err != nil {
+			return err
+		}
+		s, err := session.New(*sc, rand)
 		if err != nil {
 			return err
 		}
@@ -442,15 +625,175 @@ func ServerSessionShowAction(ctx *cli.Context) error {
 		}
 
 		if ctx.Bool("json") {
-			err = enc.Encode(s.Unwrap())
+			err = enc.Encode(s.Data())
 			if err != nil {
 				return err
 			}
+			os.Stdout.Write([]byte("\n"))
 		} else {
-			debug.Dump(s.Unwrap())
+			debug.Dump(s.Data())
 		}
 
-		_, _ = os.Stdout.Write([]byte("\n"))
+		return nil
+	})
+}
+
+func ServerSessionValidateAction(ctx *cli.Context) error {
+	return c.Invoke(func(rand crypto.Rand, enc *json.Encoder, debug *spew.ConfigState) error {
+		key := ctx.String("key")
+
+		c := &container.Config{
+			Type:        ctx.String("container"),
+			Serializer:  ctx.String("serializer"),
+			Sealer:      ctx.String("sealer"),
+			Compressor:  ctx.String("compressor"),
+			Representer: ctx.String("representer"),
+			Key:         key,
+			Jwt:         &container.JwtConfig{Algo: ctx.String("jwt-algo")},
+		}
+		err := config.Postprocess(c)
+		if err != nil {
+			return err
+		}
+
+		sc := session.Config{Container: c}
+		sc.Container.Default()
+		s, err := session.New(sc, rand)
+		if err != nil {
+			return err
+		}
+
+		buf := []byte(ctx.Args().First())
+		if len(buf) == 0 {
+			buf, err = ioutil.ReadAll(os.Stdin)
+			if err != nil {
+				return err
+			}
+		}
+
+		err = s.Load(buf)
+		if err != nil {
+			return err
+		}
+
+		err = s.Validate()
+		if err == nil {
+			fmt.Println("session validation succeeded")
+		} else {
+			fmt.Println("session validation failed:", err)
+			os.Exit(1)
+		}
+
+		return nil
+	})
+}
+
+func ServerCSRFIssueAction(ctx *cli.Context) error {
+	return c.Invoke(func(rand crypto.Rand) error {
+		key := ctx.String("key")
+		source := ctx.String("source")
+		subject := ctx.String("subject")
+		ttl := ctx.Duration("ttl")
+
+		c := &csrf.Config{
+			Key: key,
+			TTL: ttl,
+		}
+		err := config.Postprocess(c)
+		if err != nil {
+			return err
+		}
+
+		t, err := csrf.New(*c, rand)
+		if err != nil {
+			return err
+		}
+
+		token, err := t.Sign(source, subject)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(token)
+
+		return nil
+	})
+}
+
+func ServerCSRFShowAction(ctx *cli.Context) error {
+	return c.Invoke(func(rand crypto.Rand, enc *json.Encoder, debug *spew.ConfigState) error {
+		key := ctx.String("key")
+
+		c := &csrf.Config{Key: key}
+		err := config.Postprocess(c)
+		if err != nil {
+			return err
+		}
+
+		t, err := csrf.New(*c, rand)
+		if err != nil {
+			return err
+		}
+
+		buf := []byte(ctx.Args().First())
+		if len(buf) == 0 {
+			buf, err = ioutil.ReadAll(os.Stdin)
+			if err != nil {
+				return err
+			}
+		}
+
+		token, err := t.Unpack(csrf.Token(buf))
+		if err != nil {
+			return err
+		}
+
+		if ctx.Bool("json") {
+			err = enc.Encode(token.Data())
+			if err != nil {
+				return err
+			}
+			os.Stdout.Write([]byte("\n"))
+		} else {
+			debug.Dump(token.Data())
+		}
+
+		return nil
+	})
+}
+
+func ServerCSRFValidateAction(ctx *cli.Context) error {
+	return c.Invoke(func(rand crypto.Rand, enc *json.Encoder, debug *spew.ConfigState) error {
+		key := ctx.String("key")
+		source := ctx.String("source")
+		subject := ctx.String("subject")
+
+		c := &csrf.Config{Key: key}
+		err := config.Postprocess(c)
+		if err != nil {
+			return err
+		}
+
+		t, err := csrf.New(*c, rand)
+		if err != nil {
+			return err
+		}
+
+		buf := []byte(ctx.Args().First())
+		if len(buf) == 0 {
+			buf, err = ioutil.ReadAll(os.Stdin)
+			if err != nil {
+				return err
+			}
+		}
+
+		err = t.Validate(source, subject, string(buf))
+		if err == nil {
+			fmt.Println("token validation succeeded")
+		} else {
+			fmt.Println("token validation failed", err)
+			os.Exit(1)
+		}
 
 		return nil
 	})

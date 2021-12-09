@@ -1,34 +1,18 @@
 package session
 
 import (
-	"io"
-	"io/ioutil"
 	"net/http"
+	"strings"
 	"time"
 
 	"git.backbone/corpix/goboilerplate/pkg/crypto"
 	"git.backbone/corpix/goboilerplate/pkg/crypto/container"
-	"git.backbone/corpix/goboilerplate/pkg/errors"
 	"git.backbone/corpix/goboilerplate/pkg/meta"
 )
 
-type (
-	Container    = container.Container
-	Payload      = container.Payload
-	PayloadKey   = container.PayloadKey
-	PayloadValue = container.PayloadValue
-
-	ErrIncompatible = container.ErrIncompatible
-	ErrInvalid      = container.ErrInvalid
-
-	Session struct {
-		container *Container
-		config    Config
-		box       *crypto.SecretBox
-	}
-)
-
 const (
+	StoreContextKey = "session-store"
+
 	Version = container.Version
 
 	SameSiteDefault = "default"
@@ -38,7 +22,7 @@ const (
 )
 
 var (
-	Name     = "_" + meta.Name
+	Name     = "_" + strings.ReplaceAll(meta.Name, "-", "_")
 	SameSite = map[string]http.SameSite{
 		SameSiteDefault: http.SameSiteDefaultMode,
 		SameSiteLax:     http.SameSiteLaxMode,
@@ -47,63 +31,58 @@ var (
 	}
 )
 
+type (
+	Container       = container.Container
+	ContainerConfig = container.Config
+
+	Header       = container.Header
+	Payload      = container.Payload
+	PayloadKey   = container.PayloadKey
+	PayloadValue = container.PayloadValue
+	Data         = container.Data
+	Encoder      = container.Encoder
+
+	ErrIncompatible = container.ErrIncompatible
+	ErrInvalid      = container.ErrInvalid
+
+	Session struct {
+		config     Config
+		container  Container
+		rand       crypto.Rand
+		options    []Option
+		validators []Validator
+	}
+)
+
 //
 
-func (s *Session) Name() string {
-	return s.config.Name
-}
+func (s *Session) Header() Header   { return s.container.Header() }
+func (s *Session) Payload() Payload { return s.container.Payload() }
+func (s *Session) Data() Data       { return s.container.Data() }
+func (s *Session) Encoder() Encoder { return s.container.Encoder() }
 
-func (s *Session) Unwrap() *Container {
-	return s.container
-}
+func (s *Session) Clean() { s.container.Clean() }
+func (s *Session) Touch() { s.container.Touch(0) }
 
-func (s *Session) ValidAfter() time.Time {
-	return s.container.ValidAfter
-}
+func (s *Session) Validate() error {
+	err := s.container.Validate()
+	if err != nil {
+		return err
+	}
 
-func (s *Session) ValidBefore() time.Time {
-	return s.container.ValidBefore
+	for _, validate := range s.validators {
+		err = validate(s)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (s *Session) RefreshRequired() bool {
-	return time.Now().After(s.container.ValidAfter.Add(s.config.Refresh))
+	return time.Now().After(s.container.Header().ValidAfter.Add(s.config.Refresh))
 }
-
-func (s *Session) Save() ([]byte, error) {
-	buf, err := container.Marshal(s.container)
-	if err != nil {
-		return nil, err
-	}
-	enc, err := container.Encrypt(s.box, container.Compress(buf))
-	if err != nil {
-		return nil, err
-	}
-
-	return container.Encode(enc), nil
-}
-
-func (s *Session) Load(encoded []byte) error {
-	enc, err := container.Decode(encoded)
-	if err != nil {
-		return err
-	}
-	dec, err := container.Decrypt(s.box, enc)
-	if err != nil {
-		return err
-	}
-	buf, err := container.Decompress(dec)
-	if err != nil {
-		return err
-	}
-
-	return container.Unmarshal(buf, s.container)
-}
-
-func (s *Session) Validate() error {
-	return container.Validate(s.container)
-}
-
-//
 
 func (s *Session) Refresh() {
 	t := time.Now()
@@ -139,43 +118,49 @@ func (s *Session) Del(key PayloadKey) bool {
 	return ok
 }
 
-func (s *Session) Clean() {
-	s.container.Clean()
+//
+
+func (s *Session) Save() ([]byte, error)  { return s.container.Save() }
+func (s *Session) Load(buf []byte) error  { return s.container.Load(buf) }
+func (s *Session) New() (*Session, error) { return New(s.config, s.rand, s.options...) }
+
+//
+
+type (
+	Option    = func(*Session)
+	Validator = func(*Session) error
+)
+
+func WithPayloadKey(key PayloadKey, value PayloadValue) Option {
+	return func(s *Session) {
+		s.Set(key, value)
+	}
 }
 
-func (s *Session) Data() Payload {
-	return s.container.Data()
+func WithValidator(validate Validator) Option {
+	return func(s *Session) {
+		s.validators = append(s.validators, validate)
+	}
 }
 
 //
 
-func New(c Config, rand io.Reader) (*Session, error) {
-	var s []byte
-	if c.EncryptionKeyFile != "" {
-		buf, err := ioutil.ReadFile(c.EncryptionKeyFile)
-		if err != nil {
-			return nil, errors.Wrapf(
-				err, "failed to load encryption-key-file: %q",
-				c.EncryptionKeyFile,
-			)
-		}
-		s = buf
-	} else {
-		s = []byte(c.EncryptionKey)
+func New(c Config, rand crypto.Rand, options ...Option) (*Session, error) {
+	cont, err := container.New(*c.Container, rand, time.Now(), c.MaxAge, nil)
+	if err != nil {
+		return nil, err
 	}
 
-	if crypto.SecretBoxKeySize != len(s) {
-		return nil, errors.Errorf(
-			"invalid encryption key length, want %d, got %d",
-			crypto.SecretBoxKeySize, len(s),
-		)
-	}
-	key := new(crypto.SecretBoxKey)
-	copy(key[:], s)
-
-	return &Session{
-		container: container.New(time.Now(), c.MaxAge, nil),
+	sn := &Session{
 		config:    c,
-		box:       crypto.NewSecretBox(rand, key),
-	}, nil
+		container: cont,
+		rand:      rand,
+		options:   options,
+	}
+
+	for _, option := range options {
+		option(sn)
+	}
+
+	return sn, nil
 }

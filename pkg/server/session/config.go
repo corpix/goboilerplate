@@ -8,21 +8,18 @@ import (
 )
 
 type Config struct {
-	Name              string        `yaml:"name"`
-	MaxAge            time.Duration `yaml:"max-age"`
-	Refresh           time.Duration `yaml:"refresh"`
-	EncryptionKey     string        `yaml:"encryption-key"`
-	EncryptionKeyFile string        `yaml:"encryption-key-file"`
-
-	Cookie *CookieConfig `yaml:"cookie"`
+	Container *ContainerConfig `yaml:"container"`
+	MaxAge    time.Duration    `yaml:"max-age"`
+	Refresh   time.Duration    `yaml:"refresh"`
+	Cookie    *CookieConfig    `yaml:"cookie"`
 }
 
 func (c *Config) Default() {
 loop:
 	for {
 		switch {
-		case c.Name == "":
-			c.Name = Name
+		case c.Container == nil:
+			c.Container = &ContainerConfig{}
 		case c.MaxAge <= 0:
 			c.MaxAge = 7 * 24 * time.Hour
 		case c.Refresh <= 0:
@@ -35,19 +32,10 @@ loop:
 	}
 }
 
-func (c *Config) Validate() error {
-	if c.EncryptionKey != "" && c.EncryptionKeyFile != "" {
-		return errors.New("either encryption-key or encryption-key-file must be defined, not both")
-	}
-	if c.EncryptionKey == "" && c.EncryptionKeyFile == "" {
-		return errors.New("either encryption-key or encryption-key-file must be defined")
-	}
-	return nil
-}
-
 //
 
 type CookieConfig struct {
+	Name     string `yaml:"name"`
 	Path     string `yaml:"path"`
 	Domain   string `yaml:"domain"`
 	Secure   *bool  `yaml:"secure"`
@@ -59,6 +47,8 @@ func (c *CookieConfig) Default() {
 loop:
 	for {
 		switch {
+		case c.Name == "":
+			c.Name = Name
 		case c.Path == "":
 			c.Path = "/"
 		case c.Secure == nil:

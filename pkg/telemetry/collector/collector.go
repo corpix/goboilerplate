@@ -8,6 +8,8 @@ import (
 	"git.backbone/corpix/goboilerplate/pkg/meta"
 )
 
+const Delimiter = "_"
+
 var (
 	NewCounter      = prometheus.NewCounter
 	NewCounterVec   = prometheus.NewCounterVec
@@ -33,12 +35,21 @@ type (
 	Labels = prometheus.Labels
 )
 
+func NamePart(xs ...string) string {
+	xxs := []string{}
+
+	for _, x := range xs {
+		if x != "" {
+			xxs = append(xxs, x)
+		}
+	}
+
+	return strings.Join(xxs, Delimiter)
+}
+
 func Name(subsystem string, name string, rest ...string) string {
-	return strings.Join(
-		append(
-			[]string{meta.TelemetryNamespace, subsystem, name},
-			rest...,
-		),
-		"_",
-	)
+	return NamePart(append(
+		[]string{meta.TelemetryNamespace, subsystem, name},
+		rest...,
+	)...)
 }

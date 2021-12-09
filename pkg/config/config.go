@@ -67,6 +67,10 @@ func (c *Config) Update(cc interface{}) error {
 
 //
 
+func Postprocess(c interface{}) error {
+	return revip.Postprocess(c, LocalPostprocessors...)
+}
+
 func Default() (*Config, error) {
 	c := &Config{}
 	err := revip.Postprocess(

@@ -30,6 +30,10 @@ type SecretBox struct {
 	key  *SecretBoxKey
 }
 
+func (s SecretBox) Nonce() (*SecretBoxNonce, error) {
+	return SecretBoxNonceGen(s.rand)
+}
+
 func (s SecretBox) Seal(nonce *SecretBoxNonce, message []byte) []byte {
 	return SecretBoxSeal(s.key, nonce, message)
 }

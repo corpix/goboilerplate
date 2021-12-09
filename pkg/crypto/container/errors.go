@@ -2,32 +2,30 @@ package container
 
 import (
 	"fmt"
-	"time"
 )
 
 type ErrIncompatible struct {
-	Want uint
-	Got  uint
+	Subject string
+	Meta    []interface{}
 }
 
 func (e ErrIncompatible) Error() string {
 	return fmt.Sprintf(
-		"container version is incompatible, want %d, got %d",
-		e.Want, e.Got,
+		"container %s is incompatible, meta: %v",
+		e.Subject, e.Meta,
 	)
 }
 
 //
 
 type ErrInvalid struct {
-	Relation  string
-	Timestamp time.Time
-	Now       time.Time
+	Subject string
+	Meta    []interface{}
 }
 
 func (e ErrInvalid) Error() string {
 	return fmt.Sprintf(
-		"container version is expired, valid %s %q, but now %q",
-		e.Relation, e.Timestamp, e.Now,
+		"container signature is %s, meta: %v",
+		e.Subject, e.Meta,
 	)
 }

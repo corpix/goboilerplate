@@ -7,10 +7,10 @@ import (
 )
 
 type Config struct {
-	Enable  bool
-	Addr    string
-	Path    string
-	Timeout *server.TimeoutConfig
+	Enable bool           `yaml:"enable"`
+	Addr   string         `yaml:"addr"`
+	Path   string         `yaml:"path"`
+	HTTP   *server.Config `yaml:"http"`
 }
 
 func (c *Config) Default() {
@@ -21,8 +21,8 @@ loop:
 			c.Addr = "127.0.0.1:4280"
 		case c.Path == "":
 			c.Path = "/"
-		case c.Timeout == nil:
-			c.Timeout = &server.TimeoutConfig{}
+		case c.HTTP == nil:
+			c.HTTP = &server.Config{}
 		default:
 			break loop
 		}

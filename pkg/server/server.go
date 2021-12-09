@@ -1,44 +1,123 @@
 package server
 
 import (
+	"net"
 	"net/http"
 
 	echo "github.com/labstack/echo/v4"
 	echomw "github.com/labstack/echo/v4/middleware"
 
 	"git.backbone/corpix/goboilerplate/pkg/log"
-	serverErrors "git.backbone/corpix/goboilerplate/pkg/server/errors"
 	"git.backbone/corpix/goboilerplate/pkg/server/middleware"
 	"git.backbone/corpix/goboilerplate/pkg/server/session"
+	"git.backbone/corpix/goboilerplate/pkg/telemetry/collector"
 	telemetry "git.backbone/corpix/goboilerplate/pkg/telemetry/registry"
 )
 
 type (
-	Server         = echo.Echo
+	HTTPServer = http.Server
+	HTTPOption = func(*HTTPServer)
+
 	MiddlewareFunc = echo.MiddlewareFunc
 	HandlerFunc    = echo.HandlerFunc
-	Context        = echo.Context
-	Router         = echo.Group
-	Session        = session.Session
 
-	HTTPError = echo.HTTPError
-	Error     = serverErrors.Error
+	Server struct{ *echo.Echo }
 
-	ResultError struct {
-		Code    int    `json:"code"`
-		Message string `json:"message"`
+	Headers  = http.Header
+	Context  = echo.Context
+	Session  = session.Session
+	Request  = http.Request
+	Response = echo.Response
+
+	Route  = echo.Route
+	Router interface {
+		Use(...MiddlewareFunc)
+		Router(prefix string, m ...MiddlewareFunc) Router
+		CONNECT(path string, h HandlerFunc, m ...MiddlewareFunc) *Route
+		DELETE(path string, h HandlerFunc, m ...MiddlewareFunc) *Route
+		GET(path string, h HandlerFunc, m ...MiddlewareFunc) *Route
+		HEAD(path string, h HandlerFunc, m ...MiddlewareFunc) *Route
+		OPTIONS(path string, h HandlerFunc, m ...MiddlewareFunc) *Route
+		PATCH(path string, h HandlerFunc, m ...MiddlewareFunc) *Route
+		POST(path string, h HandlerFunc, m ...MiddlewareFunc) *Route
+		PUT(path string, h HandlerFunc, m ...MiddlewareFunc) *Route
+		TRACE(path string, h HandlerFunc, m ...MiddlewareFunc) *Route
+		Any(path string, h HandlerFunc, m ...MiddlewareFunc) []*Route
 	}
-	ResultPayload = interface{}
-	Result        struct {
-		Ok      bool          `json:"ok"`
-		Error   *ResultError  `json:"error,omitempty"`
-		Payload ResultPayload `json:"payload,omitempty"`
-	}
 
-	HTTPOption = func(*http.Server)
+	router struct{ *echo.Group }
 )
 
 const (
+	StatusContinue           = http.StatusContinue
+	StatusSwitchingProtocols = http.StatusSwitchingProtocols
+	StatusProcessing         = http.StatusProcessing
+	StatusEarlyHints         = http.StatusEarlyHints
+
+	StatusOK                   = http.StatusOK
+	StatusCreated              = http.StatusCreated
+	StatusAccepted             = http.StatusAccepted
+	StatusNonAuthoritativeInfo = http.StatusNonAuthoritativeInfo
+	StatusNoContent            = http.StatusNoContent
+	StatusResetContent         = http.StatusResetContent
+	StatusPartialContent       = http.StatusPartialContent
+	StatusMultiStatus          = http.StatusMultiStatus
+	StatusAlreadyReported      = http.StatusAlreadyReported
+	StatusIMUsed               = http.StatusIMUsed
+
+	StatusMultipleChoices   = http.StatusMultipleChoices
+	StatusMovedPermanently  = http.StatusMovedPermanently
+	StatusFound             = http.StatusFound
+	StatusSeeOther          = http.StatusSeeOther
+	StatusNotModified       = http.StatusNotModified
+	StatusUseProxy          = http.StatusUseProxy
+	StatusTemporaryRedirect = http.StatusTemporaryRedirect
+	StatusPermanentRedirect = http.StatusPermanentRedirect
+
+	StatusBadRequest                   = http.StatusBadRequest
+	StatusUnauthorized                 = http.StatusUnauthorized
+	StatusPaymentRequired              = http.StatusPaymentRequired
+	StatusForbidden                    = http.StatusForbidden
+	StatusNotFound                     = http.StatusNotFound
+	StatusMethodNotAllowed             = http.StatusMethodNotAllowed
+	StatusNotAcceptable                = http.StatusNotAcceptable
+	StatusProxyAuthRequired            = http.StatusProxyAuthRequired
+	StatusRequestTimeout               = http.StatusRequestTimeout
+	StatusConflict                     = http.StatusConflict
+	StatusGone                         = http.StatusGone
+	StatusLengthRequired               = http.StatusLengthRequired
+	StatusPreconditionFailed           = http.StatusPreconditionFailed
+	StatusRequestEntityTooLarge        = http.StatusRequestEntityTooLarge
+	StatusRequestURITooLong            = http.StatusRequestURITooLong
+	StatusUnsupportedMediaType         = http.StatusUnsupportedMediaType
+	StatusRequestedRangeNotSatisfiable = http.StatusRequestedRangeNotSatisfiable
+	StatusExpectationFailed            = http.StatusExpectationFailed
+	StatusTeapot                       = http.StatusTeapot
+	StatusMisdirectedRequest           = http.StatusMisdirectedRequest
+	StatusUnprocessableEntity          = http.StatusUnprocessableEntity
+	StatusLocked                       = http.StatusLocked
+	StatusFailedDependency             = http.StatusFailedDependency
+	StatusTooEarly                     = http.StatusTooEarly
+	StatusUpgradeRequired              = http.StatusUpgradeRequired
+	StatusPreconditionRequired         = http.StatusPreconditionRequired
+	StatusTooManyRequests              = http.StatusTooManyRequests
+	StatusRequestHeaderFieldsTooLarge  = http.StatusRequestHeaderFieldsTooLarge
+	StatusUnavailableForLegalReasons   = http.StatusUnavailableForLegalReasons
+
+	StatusInternalServerError           = http.StatusInternalServerError
+	StatusNotImplemented                = http.StatusNotImplemented
+	StatusBadGateway                    = http.StatusBadGateway
+	StatusServiceUnavailable            = http.StatusServiceUnavailable
+	StatusGatewayTimeout                = http.StatusGatewayTimeout
+	StatusHTTPVersionNotSupported       = http.StatusHTTPVersionNotSupported
+	StatusVariantAlsoNegotiates         = http.StatusVariantAlsoNegotiates
+	StatusInsufficientStorage           = http.StatusInsufficientStorage
+	StatusLoopDetected                  = http.StatusLoopDetected
+	StatusNotExtended                   = http.StatusNotExtended
+	StatusNetworkAuthenticationRequired = http.StatusNetworkAuthenticationRequired
+
+	//
+
 	HeaderAccept                          = echo.HeaderAccept
 	HeaderAcceptEncoding                  = echo.HeaderAcceptEncoding
 	HeaderAllow                           = echo.HeaderAllow
@@ -86,62 +165,74 @@ const (
 	QueryDelimiter = "?"
 )
 
-var (
-	NewError = serverErrors.NewError
-)
+//
+
+func (r *router) Router(prefix string, m ...MiddlewareFunc) Router {
+	return &router{Group: r.Group.Group(prefix, m...)}
+}
+
+func (s *Server) Router(prefix string, m ...MiddlewareFunc) Router {
+	return &router{Group: s.Echo.Group(prefix, m...)}
+}
+
+//
+
+func ComposeMiddleware(mw ...MiddlewareFunc) MiddlewareFunc {
+	return func(h HandlerFunc) HandlerFunc {
+		var (
+			n       = len(mw) - 1
+			handler = h
+		)
+		for n >= 0 {
+			handler = mw[n](handler)
+			n--
+		}
+
+		return handler
+	}
+}
+
+//
 
 func HTTPTimeoutOption(c TimeoutConfig) HTTPOption {
-	return func(s *http.Server) {
+	return func(s *HTTPServer) {
 		s.ReadTimeout = c.Read
 		s.WriteTimeout = c.Write
 	}
 }
 
-func NewHTTP(addr string, options ...HTTPOption) *http.Server {
-	s := &http.Server{Addr: addr}
+func NewHTTPServer(addr string, options ...HTTPOption) *HTTPServer {
+	s := &HTTPServer{Addr: addr}
 	for _, fn := range options {
 		fn(s)
 	}
 	return s
 }
 
-//
-
-func DefaultHTTPErrorHandler(err error, c echo.Context) {
-	if _, ok := err.(*echo.HTTPError); ok {
-		c.Echo().DefaultHTTPErrorHandler(err, c)
-		return
-	}
-
-	//
-
-	code := http.StatusInternalServerError
-	r := Result{
-		Ok: false,
-		Error: &ResultError{
-			Code:    code,
-			Message: http.StatusText(code),
-		},
-	}
-
-	if e, ok := err.(*Error); ok {
-		r.Error.Code = e.Code
-		r.Error.Message = e.Error()
-	}
-
-	_ = c.JSON(r.Error.Code, r)
-}
-
-func New(name string, l log.Logger, r *telemetry.Registry) *Server {
+func New(c Config, subsystem string, name string, l log.Logger, r *telemetry.Registry) (*Server, error) {
 	e := echo.New()
 	e.HideBanner = true
 	e.Logger = &middleware.Logger{Logger: l}
 	e.HTTPErrorHandler = DefaultHTTPErrorHandler
 
+	ipExtractorOptions := make([]TrustOption, len(c.IPExtractor.TrustCIDR))
+	for n, cidr := range c.IPExtractor.TrustCIDR {
+		_, ipnet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			return nil, err
+		}
+
+		ipExtractorOptions[n] = TrustIPRange(ipnet)
+	}
+
+	e.IPExtractor = echo.IPExtractor(ExtractIPFromRealIPHeader(ipExtractorOptions...))
+
+	//
+
 	e.Use(echomw.RequestID())
 	e.Use(middleware.NewLogger(l, ""))
-	e.Use(middleware.NewTelemetry(r, name))
+	e.Use(middleware.NewTelemetry(r, collector.NamePart(subsystem, name)))
 	e.Use(middleware.NewRecover(nil, l))
 
-	return e
+	return &Server{Echo: e}, nil
 }

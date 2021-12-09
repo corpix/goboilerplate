@@ -4,6 +4,6 @@
 ## Use frozen nixpkgs from internet
 with builtins;
 import (fetchTarball {
- url    = "https://github.com/nixos/nixpkgs/archive/b7d9b2a9e9d26dc98e264087e31bce151adfd7f7.tar.gz";
- sha256 = "0v9m9qzfaj8w7zfdh6581xa2i5z7rsn858nhkk0acpf6z3nxl7c1";
+  url    = "https://github.com/nixos/nixpkgs/archive/3f50543e347c074f2834c0a899d3b1fbd626375f.tar.gz";
+  sha256 = "1sg97vrihl2n9sh9fvplahkgkqdb4359i95h9515h2fqg6i7gvxp";
 })

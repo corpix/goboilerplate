@@ -44,6 +44,10 @@ func NewLogger(l log.Logger, msg string) echo.MiddlewareFunc {
 				Str("referer", req.Referer()).
 				Logger()
 
+			ll.Trace().
+				Interface("headers", c.Request().Header).
+				Msg("dump request headers")
+
 			err := next(withLoggerContext(c, &Logger{Logger: ll}))
 
 			stop := time.Now()

@@ -13,6 +13,10 @@ type Logger struct {
 	log.Logger
 }
 
+func (l Logger) Unwrap() log.Logger {
+	return l.Logger
+}
+
 func (l Logger) logJSON(e *log.Event, v interface{}) {
 	e.Interface("json", v)
 }

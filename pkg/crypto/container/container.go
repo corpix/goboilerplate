@@ -1,209 +1,230 @@
 package container
 
 import (
-	"encoding/base64"
-	"sync"
+	"strings"
 	"time"
-
-	"github.com/klauspost/compress/zstd"
-	msgpack "github.com/vmihailenco/msgpack/v5"
 
 	"git.backbone/corpix/goboilerplate/pkg/crypto"
 	"git.backbone/corpix/goboilerplate/pkg/errors"
 )
 
-const Version uint = 0
+const (
+	Version uint = 2
+
+	SecretBoxType Type = "secretbox"
+	JwtType       Type = "jwt"
+
+	MsgPackSerializerType SerializerType = "msgpack"
+	JsonSerializerType    SerializerType = "json"
+
+	NopSealerType       SealerType = "nop"
+	SecretBoxSealerType SealerType = "secretbox"
+
+	NopCompressorType  CompressorType = "nop"
+	ZstdCompressorType CompressorType = "zstd"
+
+	NopRepresenterType    RepresenterType = "nop"
+	Base64RepresenterType RepresenterType = "base64"
+)
 
 var (
-	encoding = base64.URLEncoding
-
-	compressor, _   = zstd.NewWriter(nil)
-	decompressor, _ = zstd.NewReader(nil)
+	Types = map[Type]struct{}{
+		SecretBoxType: {},
+		JwtType:       {},
+	}
+	SerializerTypes = map[SerializerType]struct{}{
+		MsgPackSerializerType: {},
+		JsonSerializerType:    {},
+	}
+	SealerTypes = map[SealerType]struct{}{
+		NopSealerType:       {},
+		SecretBoxSealerType: {},
+	}
+	CompressorTypes = map[CompressorType]struct{}{
+		NopCompressorType:  {},
+		ZstdCompressorType: {},
+	}
+	RepresenterTypes = map[RepresenterType]struct{}{
+		NopRepresenterType:    {},
+		Base64RepresenterType: {},
+	}
 )
 
 type (
-	EncryptedContainer = []byte
-	Container          struct {
-		lock *sync.RWMutex
+	Nonce = uint64
 
+	//
+
+	Header struct {
 		Version     uint
+		Nonce       Nonce
 		ValidAfter  time.Time
 		ValidBefore time.Time
-		Payload     Payload
+	}
+
+	Payload      = map[PayloadKey]PayloadValue
+	PayloadKey   uint
+	PayloadValue []byte
+
+	Data struct {
+		Header
+		Payload
+	}
+
+	//
+
+	Container interface {
+		Header() Header
+		Payload() Payload
+		Data() Data
+		Encoder() Encoder
+
+		Clean()
+		Touch(Nonce)
+		Validate() error
+		Refresh(validAfter time.Time, validBefore time.Time)
+
+		Set(key PayloadKey, value PayloadValue)
+		Get(key PayloadKey) (PayloadValue, bool)
+		Del(key PayloadKey) bool
+
+		Save() ([]byte, error)
+		Load([]byte) error
+	}
+	Type string
+
+	//
+
+	Serializer interface {
+		Marshal(interface{}) ([]byte, error)
+		Unmarshal([]byte, interface{}) error
+	}
+	SerializerType string
+
+	//
+
+	Compressor interface {
+		Compress([]byte) []byte
+		Decompress([]byte) ([]byte, error)
+	}
+	CompressorType string
+
+	//
+
+	Sealer interface {
+		Seal([]byte) ([]byte, error)
+		Open([]byte) ([]byte, error)
+	}
+	SealerType string
+
+	//
+
+	Representer interface {
+		Encode([]byte) []byte
+		Decode([]byte) ([]byte, error)
+	}
+	RepresenterType string
+
+	//
+
+	Encoder struct {
+		Serializer
+		Compressor
+		Sealer
+		Representer
 	}
 )
 
-func (s *Container) Refresh(validAfter time.Time, validBefore time.Time) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
+//
 
-	s.ValidAfter = validAfter
-	s.ValidBefore = validBefore
-}
-
-func (s *Container) Get(key PayloadKey) (PayloadValue, bool) {
-	s.lock.RLock()
-	defer s.lock.RUnlock()
-
-	v, ok := s.Payload[key]
-	if !ok {
-		return nil, false
+func New(c Config, rand crypto.Rand, validAfter time.Time, ttl time.Duration, payload Payload) (Container, error) {
+	enc, err := NewEncoder(c, c.key, rand)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create encoder")
 	}
 
-	return v, true
-}
-
-func (s *Container) Set(key PayloadKey, value PayloadValue) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
-	s.Payload[key] = value
-}
-
-func (s *Container) Del(key PayloadKey) bool {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
-	if _, ok := s.Payload[key]; ok {
-		delete(s.Payload, key)
-		return ok
-	} else {
-		return ok
+	switch Type(strings.ToLower(c.Type)) {
+	case SecretBoxType:
+		return NewSecretBox(*c.SecretBox, enc, validAfter, ttl, payload)
+	case JwtType:
+		return NewJwt(*c.Jwt, enc, c.key, validAfter, ttl, payload)
+	default:
+		return nil, errors.Errorf("unsupported container type %q", c.Type)
 	}
-}
-
-func (s *Container) Clean() {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
-	s.Payload = Payload{}
-}
-
-func (s *Container) Data() Payload {
-	s.lock.RLock()
-	defer s.lock.RUnlock()
-
-	res := make(Payload, len(s.Payload))
-	for k, v := range s.Payload {
-		res[k] = v
-	}
-	return res
 }
 
 //
 
-func Marshal(v *Container) ([]byte, error) {
-	buf, err := msgpack.Marshal(v)
+func NewEncoder(c Config, key []byte, rand crypto.Rand) (Encoder, error) {
+	var (
+		e   Encoder
+		ent string
+		t   string
+		err error
+	)
+
+	//
+
+	switch strings.ToLower(c.Serializer) {
+	case string(MsgPackSerializerType):
+		e.Serializer = NewMsgPackSerializer()
+	case string(JsonSerializerType):
+		e.Serializer = NewJsonSerializer()
+	default:
+		ent = "serializer"
+		t = c.Serializer
+		goto fail
+	}
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to marshal container")
+		return e, err
 	}
 
-	return buf, nil
-}
-func Unmarshal(buf []byte, v *Container) error {
-	err := msgpack.Unmarshal(buf, v)
+	//
+
+	switch strings.ToLower(c.Compressor) {
+	case string(NopCompressorType):
+		e.Compressor = NewNopCompressor()
+	case string(ZstdCompressorType):
+		e.Compressor = NewZstdCompressor()
+	default:
+		ent = "compressor"
+		t = c.Compressor
+		goto fail
+	}
+
+	//
+
+	switch strings.ToLower(c.Sealer) {
+	case string(NopSealerType):
+		e.Sealer = NewNopSealer()
+	case string(SecretBoxSealerType):
+		e.Sealer, err = NewSecretBoxSealer(rand, key)
+	default:
+		ent = "sealer"
+		t = c.Sealer
+		goto fail
+	}
 	if err != nil {
-		return errors.Wrap(err, "failed to unmarshal container")
-	}
-	return nil
-}
-
-//
-
-func Encrypt(box *crypto.SecretBox, buf []byte) (EncryptedContainer, error) {
-	nonce, err := crypto.SecretBoxNonceGen(box.Rand())
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to encrypt container")
+		return e, err
 	}
 
-	return box.Seal(nonce, buf), nil
-}
+	//
 
-func Decrypt(box *crypto.SecretBox, enc []byte) ([]byte, error) {
-	buf, err := box.Open(enc)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to decrypt container")
+	switch strings.ToLower(c.Representer) {
+	case string(NopRepresenterType):
+		e.Representer = NewNopRepresenter()
+	case string(Base64RepresenterType):
+		e.Representer = NewBase64Representer()
+	default:
+		ent = "representer"
+		t = c.Representer
+		goto fail
 	}
 
-	return buf, nil
-}
+	//
 
-func Validate(s *Container) error {
-	t := time.Now()
+	return e, nil
 
-	if s.Version != Version {
-		return ErrIncompatible{
-			Want: Version,
-			Got:  s.Version,
-		}
-	}
-
-	if !t.After(s.ValidAfter) {
-		return ErrInvalid{
-			Relation:  "after",
-			Timestamp: s.ValidAfter,
-			Now:       t,
-		}
-	}
-
-	if !t.Before(s.ValidBefore) {
-		return ErrInvalid{
-			Relation:  "before",
-			Timestamp: s.ValidBefore,
-			Now:       t,
-		}
-	}
-
-	return nil
-}
-
-//
-
-func Compress(buf []byte) []byte {
-	return compressor.EncodeAll(buf, make([]byte, 0, len(buf)))
-}
-
-func Decompress(buf []byte) ([]byte, error) {
-	return decompressor.DecodeAll(buf, nil)
-}
-
-//
-
-func Encode(es EncryptedContainer) []byte {
-	buf := make([]byte, encoding.EncodedLen(len(es)))
-	encoding.Encode(buf, es)
-
-	return buf
-}
-
-func Decode(buf []byte) (EncryptedContainer, error) {
-	es := make(EncryptedContainer, encoding.DecodedLen(len(buf)))
-	n, err := encoding.Decode(es, buf)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to decode encrypted container")
-	}
-
-	return es[:n], nil
-}
-
-//
-
-func New(validAfter time.Time, ttl time.Duration, payload Payload) *Container {
-	if payload == nil {
-		payload = make(Payload)
-	}
-
-	p := make(Payload, len(payload))
-	for k, v := range payload {
-		p[k] = v
-	}
-
-	return &Container{
-		lock: &sync.RWMutex{},
-
-		Version:     Version,
-		ValidAfter:  validAfter,
-		ValidBefore: validAfter.Add(ttl),
-		Payload:     p,
-	}
+fail:
+	return e, errors.Errorf("unsupported %s %q", ent, t)
 }

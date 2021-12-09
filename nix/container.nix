@@ -30,7 +30,7 @@ in dockerTools.buildLayeredImage {
   config = {
     User = "nobody";
     Env = ["TZ=${timeZone}"];
-    Entrypoint = ["/bin/${name}"];
-    Expose = ["4180/tcp"];
+    Entrypoint = ["/bin/${name}" "-c" "/etc/${name}/config.yml"];
+    Expose = ["4180/tcp" "4280/tcp"];
   };
 }
