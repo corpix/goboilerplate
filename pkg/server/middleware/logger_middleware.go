@@ -49,7 +49,6 @@ func NewLogger(l log.Logger, msg string) echo.MiddlewareFunc {
 				Msg("dump request headers")
 
 			err := next(withLoggerContext(c, &Logger{Logger: ll}))
-
 			stop := time.Now()
 
 			var evt *log.Event
@@ -60,7 +59,6 @@ func NewLogger(l log.Logger, msg string) echo.MiddlewareFunc {
 			}
 
 			evt.
-				Int("status", res.Status).
 				Dur("latency", stop.Sub(start)).
 				Str("latency_human", stop.Sub(start).String())
 
@@ -73,12 +71,22 @@ func NewLogger(l log.Logger, msg string) echo.MiddlewareFunc {
 				Str("bytes_in", cl).
 				Str("bytes_out", strconv.FormatInt(res.Size, 10))
 
+			// XXX: status is so clumzy because echo design is fucked
 			if err != nil {
 				if e, ok := err.(*errors.Error); ok {
-					evt.Interface("meta", e.Meta).Err(e.Chain())
+					evt.
+						Int("status", e.Code).
+						Interface("meta", e.Meta).
+						Err(e.Chain())
 				} else {
+
+					if e, ok := err.(*echo.HTTPError); ok {
+						evt.Int("status", e.Code)
+					}
 					evt.Err(err)
 				}
+			} else {
+				evt.Int("status", res.Status)
 			}
 			evt.Msg(msg)
 
